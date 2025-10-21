@@ -11,6 +11,10 @@
   "dependencies": {
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.3.0",
+    "amadeus": "^11.0.0",
+    "firebase": "^12.4.0",
+    "geist": "^1.5.1",
+    "lucide-react": "^0.546.0",
     "next": "15.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
