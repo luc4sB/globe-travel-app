@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface SearchBarProps {
   setFlights: (flights: any) => void;
@@ -10,6 +10,11 @@ export default function SearchBar({ setFlights }: SearchBarProps) {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
   const [date, setDate] = useState("");
+  const [isClient, setIsClient] = useState(false); // 👈 added
+
+  useEffect(() => {
+    setIsClient(true); // only render inputs on client
+  }, []);
 
   const handleSearch = async () => {
     if (!origin || !destination) {
@@ -24,7 +29,7 @@ export default function SearchBar({ setFlights }: SearchBarProps) {
         body: JSON.stringify({
           origin: origin.toUpperCase(),
           destination: destination.toUpperCase(),
-          departureDate: "2025-11-01", // Temporary — will add date picker later
+          departureDate: date || "2025-11-01",
         }),
       });
 
@@ -37,11 +42,14 @@ export default function SearchBar({ setFlights }: SearchBarProps) {
     }
   };
 
+  // 👇 Prevents hydration mismatch
+  if (!isClient) return null;
+
   return (
-    <div className="flex gap-2 my-4">
+    <div className="flex flex-wrap gap-2 my-4 justify-center">
       <input
         type="date"
-        className="border rounded p-2"
+        className="border rounded p-2 bg-white/70 dark:bg-gray-800/70 backdrop-blur-md"
         value={date}
         onChange={(e) => setDate(e.target.value)}
       />
@@ -49,17 +57,17 @@ export default function SearchBar({ setFlights }: SearchBarProps) {
         placeholder="Origin (IATA)"
         value={origin}
         onChange={(e) => setOrigin(e.target.value.toUpperCase())}
-        className="border p-2 rounded"
+        className="border rounded p-2 bg-white/70 dark:bg-gray-800/70 backdrop-blur-md"
       />
       <input
         placeholder="Destination (IATA)"
         value={destination}
         onChange={(e) => setDestination(e.target.value.toUpperCase())}
-        className="border p-2 rounded"
+        className="border rounded p-2 bg-white/70 dark:bg-gray-800/70 backdrop-blur-md"
       />
       <button
         onClick={handleSearch}
-        className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+        className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition"
       >
         Search
       </button>

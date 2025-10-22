@@ -24,7 +24,7 @@ export default function Background() {
   return (
     <div className="fixed inset-0 -z-10">
       <Canvas camera={{ position: [0, 0, 1], fov: 75 }}>
-        <color attach="background" args={[isDark ? "#030516" : "#072251"]} />
+        <color attach="background" args={[isDark ? "#030516" : "#030516"]} />
         <Stars
           radius={140}
           depth={100}

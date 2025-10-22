@@ -31,3 +31,32 @@ body {
     background-color 0.7s ease,
     color 0.7s ease;
 }
+
+@keyframes orbit {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes orbit3D {
+  0% {
+    transform: rotateY(0deg) rotateX(25deg) rotateZ(0deg);
+  }
+  25% {
+    transform: rotateY(90deg) rotateX(25deg) rotateZ(90deg);
+  }
+  50% {
+    transform: rotateY(180deg) rotateX(25deg) rotateZ(180deg);
+  }
+  75% {
+    transform: rotateY(270deg) rotateX(25deg) rotateZ(270deg);
+  }
+  100% {
+    transform: rotateY(360deg) rotateX(25deg) rotateZ(360deg);
+  }
+}
+
+
