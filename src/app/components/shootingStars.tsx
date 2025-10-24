@@ -12,11 +12,11 @@ export function ShootingStars() {
       -10,
     ),
     velocity: new THREE.Vector3(
-      -0.1 - Math.random() * 0.1, // move left/down
+      -0.1 - Math.random() * 0.1,
       -0.03 - Math.random() * 0.02,
       0,
     ),
-    life: Math.random() * 300 + 300, // frames before reset
+    life: Math.random() * 300 + 300,
     size: 0.01 + Math.random() * 0.01,
   }));
 

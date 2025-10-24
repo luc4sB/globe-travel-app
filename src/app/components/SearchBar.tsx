@@ -10,10 +10,10 @@ export default function SearchBar({ setFlights }: SearchBarProps) {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
   const [date, setDate] = useState("");
-  const [isClient, setIsClient] = useState(false); // 👈 added
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    setIsClient(true); // only render inputs on client
+    setIsClient(true);
   }, []);
 
   const handleSearch = async () => {
@@ -42,7 +42,6 @@ export default function SearchBar({ setFlights }: SearchBarProps) {
     }
   };
 
-  // 👇 Prevents hydration mismatch
   if (!isClient) return null;
 
   return (
