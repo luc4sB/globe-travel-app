@@ -1,9 +1,11 @@
 "use client";
+
 import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { TextureLoader, SRGBColorSpace, Group } from "three";
 import { useEffect, useRef, useState } from "react";
-import CountryPoints from "./CountryBorders";
+import CountryBorders from "./CountryBorders";
+import CountryLabels from "./CountryLabels";
 
 function Earth({ isDark }: { isDark: boolean }) {
   const [dayTexture, nightTexture] = useLoader(TextureLoader, [
@@ -38,7 +40,8 @@ function RotatingGroup({ isDark }: { isDark: boolean }) {
   return (
     <group ref={groupRef}>
       <Earth isDark={isDark} />
-      <CountryPoints />
+      <CountryBorders isDark={isDark} />
+      <CountryLabels isDark={isDark} />
     </group>
   );
 }
@@ -63,7 +66,14 @@ export default function Globe() {
       <Canvas camera={{ position: [0, 0, 3.2], fov: 45 }} gl={{ alpha: true }}>
         <ambientLight intensity={isDark ? 8.4 : 4.5} />
         <RotatingGroup isDark={isDark} />
-        <OrbitControls enableZoom={false} enablePan={false} />
+        <OrbitControls
+          enablePan={false}
+          enableZoom={true} // ✅ zoom now enabled
+          minDistance={2.2} // ✅ prevents zooming too far in
+          maxDistance={3} // ✅ prevents zooming too far out
+          zoomSpeed={0.4} // ✅ smooth zoom speed
+          rotateSpeed={0.6}
+        />
       </Canvas>
     </div>
   );
