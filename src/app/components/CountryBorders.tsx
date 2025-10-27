@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import * as THREE from "three";
 
-function latLongToVector3(lat: number, lon: number, radius = 1.2005) {
+function latLongToVector3(lat: number, lon: number, radius = 1.205) {
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
   return new THREE.Vector3(
@@ -13,12 +13,18 @@ function latLongToVector3(lat: number, lon: number, radius = 1.2005) {
   );
 }
 
+interface CountryMesh {
+  name: string;
+  geometry: THREE.BufferGeometry;
+}
+
 interface LineData {
   points: THREE.Vector3[];
 }
 
 export default function CountryBorders({ isDark = false }: { isDark?: boolean }) {
   const [borders, setBorders] = useState<LineData[]>([]);
+  const [countryMeshes, setCountryMeshes] = useState<CountryMesh[]>([]);
 
   useEffect(() => {
     const url = `${window.location.origin}/data/countries.geojson`;
@@ -26,53 +32,112 @@ export default function CountryBorders({ isDark = false }: { isDark?: boolean })
       .then((res) => res.json())
       .then((data) => {
         const lines: LineData[] = [];
-        data.features.forEach((feature: any) => {
-          const geometry = feature.geometry;
-          if (!geometry || !geometry.coordinates) return;
+        const meshes: CountryMesh[] = [];
+
+        for (const feature of data.features ?? []) {
+          const name = feature.properties?.name || "Unknown";
+          const geom = feature.geometry;
+          if (!geom || !geom.coordinates) continue;
 
           const polygons =
-            geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
+            geom.type === "Polygon" ? [geom.coordinates] : geom.coordinates;
 
-          polygons.forEach((polygon: any) => {
-            const outer = polygon[0];
-            if (!Array.isArray(outer)) return;
-
+          // --- Borders (visible lines) ---
+          for (const poly of polygons) {
+            const outer = poly[0];
+            if (!Array.isArray(outer)) continue;
             const simplified = outer.filter((_: any, i: number) => i % 8 === 0);
             const points = simplified.map(([lon, lat]: [number, number]) =>
-              latLongToVector3(lat, lon)
-            );
+              // Slightly increase the radius for country surface (so it floats above Earth)
+            latLongToVector3(lat, lon, 1.202)
 
+            );
             lines.push({ points });
-          });
-        });
+          }
+
+          // --- Triangulated mesh for raycasting ---
+          const verts: number[] = [];
+          const idx: number[] = [];
+
+          for (const poly of polygons) {
+            const outer = poly[0];
+            if (outer.length < 3) continue;
+
+            // Project to 2D plane (equirectangular)
+const shapePts: THREE.Vector2[] = outer.map(
+  ([lon, lat]: [number, number]) => new THREE.Vector2(lon, lat)
+);
+
+            const triangles = THREE.ShapeUtils.triangulateShape(shapePts, []);
+
+            // Build geometry from 2D triangles and reproject to sphere
+            triangles.forEach(([a, b, c]) => {
+              const pts = [shapePts[a], shapePts[b], shapePts[c]];
+              for (const p of pts) {
+                const v3 = latLongToVector3(p.y, p.x, 1.23);
+                verts.push(v3.x, v3.y, v3.z);
+              }
+              const base = idx.length;
+              idx.push(base, base + 1, base + 2);
+            });
+          }
+
+          if (verts.length > 0) {
+            const geom = new THREE.BufferGeometry();
+            geom.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+            geom.setIndex(idx);
+            geom.computeVertexNormals();
+            meshes.push({ name, geometry: geom });
+          }
+        }
+
         setBorders(lines);
+        setCountryMeshes(meshes);
       })
       .catch((err) => console.error("Error loading countries.geojson:", err));
   }, []);
 
-  const geometry = useMemo(() => {
+  const borderGeometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
-    const positions: number[] = [];
-
+    const pos: number[] = [];
     borders.forEach(({ points }) => {
       for (let i = 0; i < points.length - 1; i++) {
-        positions.push(...points[i].toArray(), ...points[i + 1].toArray());
+        pos.push(...points[i].toArray(), ...points[i + 1].toArray());
       }
     });
-
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     return geo;
   }, [borders]);
 
-  const material = useMemo(
+  const borderMaterial = useMemo(
     () =>
       new THREE.LineBasicMaterial({
-        color: isDark ? "#d7d7d7" : "#e1e1e1ff",
+        color: isDark ? "#d7d7d7" : "#e1e1e1",
         transparent: true,
         opacity: 0.6,
       }),
     [isDark]
   );
 
-  return <lineSegments geometry={geometry} material={material} />;
+  const invisibleMat = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        visible: false,
+      }),
+    []
+  );
+
+  return (
+    <group>
+      <lineSegments geometry={borderGeometry} material={borderMaterial} />
+      {countryMeshes.map((c, i) => (
+        <mesh
+          key={i}
+          geometry={c.geometry}
+          material={invisibleMat}
+          userData={{ countryName: c.name }}
+        />
+      ))}
+    </group>
+  );
 }

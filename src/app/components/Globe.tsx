@@ -6,6 +6,8 @@ import { TextureLoader, SRGBColorSpace, Group } from "three";
 import { useEffect, useRef, useState } from "react";
 import CountryBorders from "./CountryBorders";
 import CountryLabels from "./CountryLabels";
+import { useCountryClick } from "../hooks/CountryClick";
+import CountryInfoPanel from "./CountryInfoPanel";
 
 function Earth({ isDark }: { isDark: boolean }) {
   const [dayTexture, nightTexture] = useLoader(TextureLoader, [
@@ -16,7 +18,7 @@ function Earth({ isDark }: { isDark: boolean }) {
   nightTexture.colorSpace = SRGBColorSpace;
 
   return (
-    <mesh>
+    <mesh visible>
       <sphereGeometry args={[1.2, 96, 96]} />
       <meshStandardMaterial
         map={isDark ? nightTexture : dayTexture}
@@ -32,17 +34,21 @@ function Earth({ isDark }: { isDark: boolean }) {
 function RotatingGroup({
   isDark,
   isRotationEnabled,
+  onCountrySelect,
 }: {
   isDark: boolean;
   isRotationEnabled: boolean;
+  onCountrySelect: (name: string) => void;
 }) {
   const groupRef = useRef<Group>(null);
-
   useFrame((_, delta) => {
     if (isRotationEnabled && groupRef.current) {
       groupRef.current.rotation.y += delta * 0.03;
     }
   });
+
+  // hook to handle click detection
+  useCountryClick(onCountrySelect);
 
   return (
     <group ref={groupRef}>
@@ -53,10 +59,10 @@ function RotatingGroup({
   );
 }
 
-
 export default function Globe() {
   const [isDark, setIsDark] = useState(false);
   const [isRotationEnabled, setIsRotationEnabled] = useState(true);
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -71,20 +77,15 @@ export default function Globe() {
     return () => observer.disconnect();
   }, []);
 
-  // Resume rotation after inactivity
   const handleUserInteractionEnd = () => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
     inactivityTimer.current = setTimeout(() => {
-      console.log("⏳ Resuming rotation after inactivity");
       setIsRotationEnabled(true);
     }, 60000);
   };
 
   const handleUserInteractionStart = () => {
-    if (isRotationEnabled) {
-      console.log("🛑 Rotation stopped due to user interaction");
-      setIsRotationEnabled(false);
-    }
+    if (isRotationEnabled) setIsRotationEnabled(false);
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
   };
 
@@ -95,7 +96,9 @@ export default function Globe() {
         <RotatingGroup
           isDark={isDark}
           isRotationEnabled={isRotationEnabled}
+          onCountrySelect={setSelectedCountry}
         />
+        
         <OrbitControls
           enablePan={false}
           enableZoom
@@ -107,6 +110,12 @@ export default function Globe() {
           onEnd={handleUserInteractionEnd}
         />
       </Canvas>
+
+      {/* Info panel on right */}
+      <CountryInfoPanel
+        selected={selectedCountry}
+        onClose={() => setSelectedCountry(null)}
+      />
     </div>
   );
 }
