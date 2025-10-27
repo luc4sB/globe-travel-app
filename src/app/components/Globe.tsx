@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { TextureLoader, SRGBColorSpace, Group } from "three";
 import { useEffect, useRef, useState } from "react";
@@ -12,7 +12,6 @@ function Earth({ isDark }: { isDark: boolean }) {
     "/textures/earth.jpg",
     "/textures/earth_night.jpg",
   ]);
-
   dayTexture.colorSpace = SRGBColorSpace;
   nightTexture.colorSpace = SRGBColorSpace;
 
@@ -30,11 +29,17 @@ function Earth({ isDark }: { isDark: boolean }) {
   );
 }
 
-function RotatingGroup({ isDark, pauseRotation }: { isDark: boolean; pauseRotation: boolean }) {
+function RotatingGroup({
+  isDark,
+  isRotationEnabled,
+}: {
+  isDark: boolean;
+  isRotationEnabled: boolean;
+}) {
   const groupRef = useRef<Group>(null);
 
   useFrame((_, delta) => {
-    if (!pauseRotation && groupRef.current) {
+    if (isRotationEnabled && groupRef.current) {
       groupRef.current.rotation.y += delta * 0.03;
     }
   });
@@ -48,10 +53,11 @@ function RotatingGroup({ isDark, pauseRotation }: { isDark: boolean; pauseRotati
   );
 }
 
+
 export default function Globe() {
   const [isDark, setIsDark] = useState(false);
-  const [pauseRotation, setPauseRotation] = useState(false);
-  const rotationTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [isRotationEnabled, setIsRotationEnabled] = useState(true);
+  const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const update = () =>
@@ -65,26 +71,40 @@ export default function Globe() {
     return () => observer.disconnect();
   }, []);
 
-  const handleUserInteraction = () => {
-    if (rotationTimeout.current) clearTimeout(rotationTimeout.current);
-    setPauseRotation(true);
-    rotationTimeout.current = setTimeout(() => setPauseRotation(false), 60000);
+  // Resume rotation after inactivity
+  const handleUserInteractionEnd = () => {
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    inactivityTimer.current = setTimeout(() => {
+      console.log("⏳ Resuming rotation after inactivity");
+      setIsRotationEnabled(true);
+    }, 60000);
+  };
+
+  const handleUserInteractionStart = () => {
+    if (isRotationEnabled) {
+      console.log("🛑 Rotation stopped due to user interaction");
+      setIsRotationEnabled(false);
+    }
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
   };
 
   return (
     <div className="relative flex items-center justify-center w-full h-[520px]">
       <Canvas camera={{ position: [0, 0, 3.2], fov: 45 }} gl={{ alpha: true }}>
         <ambientLight intensity={isDark ? 8.4 : 4.5} />
-        <RotatingGroup isDark={isDark} pauseRotation={pauseRotation} />
+        <RotatingGroup
+          isDark={isDark}
+          isRotationEnabled={isRotationEnabled}
+        />
         <OrbitControls
           enablePan={false}
-          enableZoom={true}
+          enableZoom
           minDistance={1.8}
           maxDistance={3.2}
           zoomSpeed={0.4}
           rotateSpeed={0.6}
-          onStart={handleUserInteraction}
-          onEnd={handleUserInteraction}
+          onStart={handleUserInteractionStart}
+          onEnd={handleUserInteractionEnd}
         />
       </Canvas>
     </div>

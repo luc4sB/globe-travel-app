@@ -6,7 +6,6 @@ import * as THREE from "three";
 function latLongToVector3(lat: number, lon: number, radius = 1.2005) {
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
-
   return new THREE.Vector3(
     -radius * Math.sin(phi) * Math.cos(theta),
     radius * Math.cos(phi),
