@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import * as THREE from "three";
-import { Line } from "@react-three/drei";
 
 function latLongToVector3(lat: number, lon: number, radius = 1.2005) {
-  //Slightly Earth’s 1.2 sphere radius
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
 
@@ -16,70 +14,66 @@ function latLongToVector3(lat: number, lon: number, radius = 1.2005) {
   );
 }
 
-interface CountryBordersProps {
-  isDark?: boolean;
+interface LineData {
+  points: THREE.Vector3[];
 }
 
-export default function CountryBorders({ isDark = false }: CountryBordersProps) {
-  const [borders, setBorders] = useState<{ points: THREE.Vector3[]; id: string }[]>([]);
+export default function CountryBorders({ isDark = false }: { isDark?: boolean }) {
+  const [borders, setBorders] = useState<LineData[]>([]);
 
   useEffect(() => {
     const url = `${window.location.origin}/data/countries.geojson`;
-
     fetch(url)
       .then((res) => res.json())
       .then((data) => {
-        const lines: { points: THREE.Vector3[]; id: string }[] = [];
-
-        data.features.forEach((feature: any, index: number) => {
+        const lines: LineData[] = [];
+        data.features.forEach((feature: any) => {
           const geometry = feature.geometry;
           if (!geometry || !geometry.coordinates) return;
 
           const polygons =
-            geometry.type === "Polygon"
-              ? [geometry.coordinates]
-              : geometry.coordinates;
+            geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
 
-          polygons.forEach((polygon: any, polyIndex: number) => {
+          polygons.forEach((polygon: any) => {
             const outer = polygon[0];
             if (!Array.isArray(outer)) return;
 
-            // Downsample border points to improve FPS (skiping every 6th)
-            const simplified = outer.filter((_: any, i: number) => i % 6 === 0);
-
+            const simplified = outer.filter((_: any, i: number) => i % 8 === 0);
             const points = simplified.map(([lon, lat]: [number, number]) =>
               latLongToVector3(lat, lon)
             );
 
-            lines.push({
-              points,
-              id: `${feature.properties?.name || "country"}-${index}-${polyIndex}`,
-            });
+            lines.push({ points });
           });
         });
-
-        console.log(`🌍 Loaded ${lines.length} country borders`);
         setBorders(lines);
       })
       .catch((err) => console.error("Error loading countries.geojson:", err));
   }, []);
 
-  const borderColor = isDark ? "#d7d7d7ff" : "#cfcfcfff";
+  const geometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    const positions: number[] = [];
 
-  return (
-    <>
-      {borders.map(({ points, id }) => (
-        <Line
-          key={id}
-          points={points}
-          color={borderColor}
-          lineWidth={0.5}
-          opacity={0.7}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      ))}
-    </>
+    borders.forEach(({ points }) => {
+      for (let i = 0; i < points.length - 1; i++) {
+        positions.push(...points[i].toArray(), ...points[i + 1].toArray());
+      }
+    });
+
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    return geo;
+  }, [borders]);
+
+  const material = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: isDark ? "#d7d7d7" : "#e1e1e1ff",
+        transparent: true,
+        opacity: 0.6,
+      }),
+    [isDark]
   );
+
+  return <lineSegments geometry={geometry} material={material} />;
 }
