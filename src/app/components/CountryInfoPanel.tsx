@@ -14,13 +14,16 @@ const imageCache = new Map<string, string[]>();
 
 export default function CountryInfoPanel({ selected, onClose }: Props) {
   const [images, setImages] = useState<string[]>([]);
+  const [mainImage, setMainImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!selected) return;
 
     if (imageCache.has(selected)) {
-      setImages(imageCache.get(selected)!);
+      const cached = imageCache.get(selected)!;
+      setImages(cached);
+      setMainImage(cached[0]);
       return;
     }
 
@@ -31,8 +34,12 @@ export default function CountryInfoPanel({ selected, onClose }: Props) {
         const urls = d.urls ?? [];
         imageCache.set(selected, urls);
         setImages(urls);
+        if (urls.length > 0) setMainImage(urls[0]);
       })
-      .catch(() => setImages([]))
+      .catch(() => {
+        setImages([]);
+        setMainImage(null);
+      })
       .finally(() => setLoading(false));
   }, [selected]);
 
@@ -40,7 +47,7 @@ export default function CountryInfoPanel({ selected, onClose }: Props) {
     <AnimatePresence>
       {selected && (
         <>
-          {/* Background overlay for mobile */}
+          {/* Mobile overlay */}
           <motion.div
             className="fixed inset-0 bg-black/30 backdrop-blur-sm md:hidden z-40"
             initial={{ opacity: 0 }}
@@ -74,12 +81,13 @@ export default function CountryInfoPanel({ selected, onClose }: Props) {
                   <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
                     <Loader2 className="animate-spin mr-2" /> Loading...
                   </div>
-                ) : images.length > 0 ? (
+                ) : mainImage ? (
                   <Image
-                    src={images[0]}
+                    key={mainImage} // triggers re-render for smooth fade
+                    src={mainImage}
                     alt={`${selected} hero`}
                     fill
-                    className="object-cover"
+                    className="object-cover transition-opacity duration-300"
                     priority
                   />
                 ) : (
@@ -96,22 +104,29 @@ export default function CountryInfoPanel({ selected, onClose }: Props) {
               {/* Photo gallery */}
               {images.length > 1 && (
                 <div className="p-4 flex gap-2 overflow-x-auto">
-                  {images.slice(1).map((src, i) => (
-                    <div key={i} className="relative flex-shrink-0 w-40 h-28">
+                  {images.map((src, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setMainImage(src)}
+                      className="relative flex-shrink-0 w-40 h-28 focus:outline-none"
+                    >
                       <Image
                         src={src}
                         alt={`${selected} view ${i + 1}`}
                         fill
-                        className="rounded-lg object-cover shadow-sm"
+                        className={`rounded-lg object-cover shadow-sm transition-all duration-200 ${
+                          mainImage === src
+                            ? "ring-4 ring-blue-500 scale-[1.02]"
+                            : "hover:opacity-90"
+                        }`}
                       />
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
 
-              {/* Info and search section */}
+              {/* Info and flight search */}
               <div className="flex flex-col gap-5 px-5 py-6 border-t border-gray-200 dark:border-zinc-800">
-                {/* Country summary placeholder (you can wire Wikipedia here later) */}
                 <div>
                   <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
                     Explore {selected}
@@ -123,7 +138,6 @@ export default function CountryInfoPanel({ selected, onClose }: Props) {
                   </p>
                 </div>
 
-                {/* Flight search */}
                 <div className="flex flex-col gap-3">
                   <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
                     Find flights to {selected}

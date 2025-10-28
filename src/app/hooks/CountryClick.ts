@@ -11,7 +11,7 @@ export function useCountryClick(onSelect: (name: string) => void) {
   const hovered = useRef<THREE.Mesh | null>(null);
 
   const highlightMat = new THREE.MeshBasicMaterial({
-    color: "#3b82f6", // Tailwind blue-500
+    color: "#3b82f6",
     opacity: 0,
     transparent: true,
     depthWrite: false,
