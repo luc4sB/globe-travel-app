@@ -103,7 +103,7 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
           if (typeof label_x !== "number" || typeof label_y !== "number") continue;
           if (!name || blacklist.has(name)) continue;
 
-          const pos = latLongToVector3(label_y, label_x, 1.275);
+          const pos = latLongToVector3(label_y, label_x, 1.225);
           let extent = 0;
 
           try {
