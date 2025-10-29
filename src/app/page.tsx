@@ -17,11 +17,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Search + results */}
-      <section className="max-w-3xl mx-auto px-4 py-8">
-        <SearchBar setFlights={setFlights} />
-        <FlightResults flights={flights} />
-      </section>
+      
     </main>
   );
 }

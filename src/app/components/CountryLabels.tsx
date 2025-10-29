@@ -77,7 +77,7 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
           "Svalbard", "Åland", "Liechtenstein", "San Marino",
           "Andorra", "Monaco", "Vatican", "Kosovo", "Northern Cyprus",
           "Western Sahara", "Somaliland", "Taiwan", "Hong Kong",
-          "Macau", "Greenland", "Bermuda", "Puerto Rico", "Falkland Islands",
+          "Macau", "Bermuda", "Puerto Rico", "Falkland Islands",
           "French Guiana", "Reunion", "Mayotte", "Guadeloupe", "Martinique",
           "Cayman Islands", "Aruba", "Curaçao", "Guam", "American Samoa",
           "Northern Mariana Islands", "New Caledonia", "French Polynesia",
@@ -162,6 +162,8 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
       moved || rotatedCam || rotatedGroup || zoomChanged || timeSinceLastUpdate.current > 2.0;
 
     const camPos = camera.position.clone();
+
+if (!shouldRecompute) return;
     if (shouldRecompute) {
       lastCamPos.current.copy(camera.position);
       lastCamRot.current.copy(camera.rotation);
@@ -170,12 +172,18 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
     }
 
     // --- ZOOM LEVEL CONTROL ---
-    const baseFont = THREE.MathUtils.mapLinear(dist, 1.8, 3.8, 0.014, 0.04);
+    const baseFont = THREE.MathUtils.mapLinear(dist, 1.8, 3.8, 0.012, 0.04);
     const baseGap = THREE.MathUtils.mapLinear(dist, 1.8, 3.8, 10, 65);
     const zoomTier =
       dist < 2.3 ? "local" :
       dist < 2.9 ? "regional" :
       "global";
+
+    const fontShrink =
+      zoomTier === "global" ? 0.75 :
+      zoomTier === "regional" ? 0.9 :
+      1.0;
+
 
     const labelBudget =
       zoomTier === "global" ? 20 :
@@ -202,7 +210,7 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
         const fade = THREE.MathUtils.clamp((facing - 0.1) / (1 - 0.1), 0, 1);
         if (fade <= 0.05) continue;
         if (label.extent < minExtent) continue;
-
+        if (zoomTier === "global" && label.extent < 8.0) continue; 
         const proj = wp.clone().project(camera);
         if (proj.z < -1 || proj.z > 1) continue;
 
@@ -213,9 +221,8 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
           0, 1
         );
 
-        const font = baseFont * (1.0 + extentNorm * 0.3);
+        const font = baseFont * (1.0 + extentNorm * 0.3) * fontShrink;
 
-        // --- Improved scoring ---
         const globalBias =
           zoomTier === "global"
             ? label.extent * 0.5
@@ -321,3 +328,4 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
     </group>
   );
 }
+

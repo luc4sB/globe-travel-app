@@ -5,17 +5,16 @@ import { GeistSans, GeistMono } from "geist/font";
 import { ThemeProvider, useTheme } from "./themeProvider";
 import ThemeToggle from "./components/themeToggle";
 import Background from "./components/Background";
+import SearchBar from "./components/SearchBar";
 
-/** Ensure the correct theme class is on <html> BEFORE hydration */
+/** Theme initialization script (runs before hydration) */
 const themeInit = `
 (function() {
   try {
     var saved = localStorage.getItem('theme');
     var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     var theme = saved || (prefersDark ? 'dark' : 'light');
-    var isDark = theme === 'dark';
-    var html = document.documentElement;
-    if (isDark) html.classList.add('dark'); else html.classList.remove('dark');
+    document.documentElement.classList.toggle('dark', theme === 'dark');
   } catch (e) {}
 })();
 `;
@@ -26,58 +25,46 @@ function Navbar() {
 
   return (
     <nav
-      style={{
-        backgroundColor: isDark
-          ? "rgba(10,12,24,0.50)"
-          : "rgba(255,255,255,0.65)",
-        color: isDark ? "#e2e8f0" : "#1e3a8a",
-        borderBottom: isDark
-          ? "1px solid rgba(255,255,255,0.10)"
-          : "1px solid rgba(0,0,0,0.08)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        transition:
-          "background-color 250ms ease, color 250ms ease, border-color 250ms ease",
-      }}
-      className="fixed top-0 left-0 w-full z-50 shadow-sm flex justify-between items-center px-6 py-3"
+      className={`fixed top-0 left-0 w-full z-50 flex items-center justify-between px-6 py-3 transition-all backdrop-blur-md border-b ${
+        isDark
+          ? "bg-[#0b0e1a]/70 border-white/10 text-gray-100"
+          : "bg-white/70 border-black/10 text-slate-800"
+      }`}
     >
-      {/* Left section: logo + name */}
+      {/* Logo */}
       <div className="flex items-center gap-2 select-none">
-        {/* Orbital static logo */}
-        <div className="relative w-6 h-6">
-          {/* Globe base */}
+        <div
+          className="w-7 h-7 rounded-full relative overflow-hidden"
+          style={{
+            background: isDark
+              ? "radial-gradient(circle at 30% 30%, #2f80ed, #0b0e1a)"
+              : "radial-gradient(circle at 30% 30%, #60a5fa, #1e3a8a)",
+            boxShadow: isDark
+              ? "0 0 8px rgba(96,165,250,0.5)"
+              : "0 0 6px rgba(96,165,250,0.6)",
+          }}
+        >
           <div
-            className="absolute inset-0 rounded-full"
+            className="absolute left-1/2 top-1/2 w-[130%] h-[2px]"
             style={{
-              background: isDark
-                ? "radial-gradient(circle at 30% 30%, #1e90ff, #001a33)"
-                : "radial-gradient(circle at 30% 30%, #3fa9f5, #004080)",
-              boxShadow: isDark
-                ? "0 0 5px rgba(30,144,255,0.7)"
-                : "0 0 5px rgba(63,169,245,0.6)",
-            }}
-          />
-
-          {/* Static orbit line (smaller, more solid) */}
-          <div
-            className="absolute left-1/2 top-1/2"
-            style={{
-              width: "125%", // reduced from 160%
-              height: "1.5px", // slightly thinner
-              background: isDark
-                ? "linear-gradient(90deg, transparent, rgba(255,255,255,1), transparent)"
-                : "linear-gradient(90deg, transparent, rgba(255, 255, 255, 1), transparent)",
-              transform: "translate(-50%, -50%) rotate(45deg)",
-              opacity: 1, // stronger visibility
+              background:
+                "linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent)",
+              transform: "translate(-50%, -50%) rotate(35deg)",
             }}
           />
         </div>
-
         <h1 className="text-xl font-semibold tracking-wide">Orbital</h1>
       </div>
 
-      {/* Right section: theme toggle */}
-      <ThemeToggle />
+      {/* Center: Country Search Bar */}
+      <div className="hidden md:flex flex-1 justify-center max-w-md">
+        <SearchBar />
+      </div>
+
+      {/* Right: Theme toggle */}
+      <div className="flex items-center gap-3">
+        <ThemeToggle />
+      </div>
     </nav>
   );
 }
@@ -93,13 +80,13 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
       <body
-        className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
+        className={`${GeistSans.variable} ${GeistMono.variable} antialiased overflow-x-hidden`}
       >
         <ThemeProvider>
           <Navbar />
           <Background />
-          {/* Padding to prevent content from hiding behind navbar */}
-          <main className="pt-16">{children}</main>
+          {/* Main content with top padding to clear navbar */}
+          <main className="pt-20">{children}</main>
         </ThemeProvider>
       </body>
     </html>

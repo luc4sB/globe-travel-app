@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import * as THREE from "three";
-
+import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils.js";
 function latLongToVector3(lat: number, lon: number, radius = 1.205) {
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
@@ -46,7 +46,7 @@ export default function CountryBorders({ isDark = false }: { isDark?: boolean })
           for (const poly of polygons) {
             const outer = poly[0];
             if (!Array.isArray(outer)) continue;
-            const simplified = outer.filter((_: any, i: number) => i % 8 === 0);
+            const simplified = outer.filter((_: any, i: number) => i % 12 === 0);
             const points = simplified.map(([lon, lat]: [number, number]) =>
               // Slightly increase the radius for country surface (so it floats above Earth)
             latLongToVector3(lat, lon, 1.202)
@@ -98,16 +98,18 @@ const shapePts: THREE.Vector2[] = outer.map(
   }, []);
 
   const borderGeometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
+  if (!borders.length) return new THREE.BufferGeometry();
+  const geometries: THREE.BufferGeometry[] = [];
+  borders.forEach(({ points }) => {
     const pos: number[] = [];
-    borders.forEach(({ points }) => {
-      for (let i = 0; i < points.length - 1; i++) {
-        pos.push(...points[i].toArray(), ...points[i + 1].toArray());
-      }
-    });
+    for (let i = 0; i < points.length - 1; i++)
+      pos.push(...points[i].toArray(), ...points[i + 1].toArray());
+    const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    return geo;
-  }, [borders]);
+    geometries.push(geo);
+  });
+  return BufferGeometryUtils.mergeGeometries(geometries, false);
+}, [borders]);
 
   const borderMaterial = useMemo(
     () =>
