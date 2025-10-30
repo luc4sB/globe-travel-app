@@ -60,6 +60,8 @@ function RotatingGroup({
   const fromDir = useRef(new THREE.Vector3(0, 0, -1));
   const toDir   = useRef(new THREE.Vector3(0, 0, -1));
   const t       = useRef(1);
+  const targetRadiusRef = useRef<number | null>(null);
+
 
   useCountryClick(onCountrySelect);
 
@@ -96,6 +98,51 @@ function RotatingGroup({
     vectorsCache.current.set(name, v);
     return v;
   }
+// --- helper: derive zoom distance from country area ---
+// Estimate camera zoom distance based on country's area (smaller country = closer zoom)
+async function getZoomForCountry(name: string): Promise<number> {
+  // Load GeoJSON once and reuse it
+  // @ts-ignore
+  if (!window.__countriesGeo) {
+    const res = await fetch(`${window.location.origin}/data/countries.geojson`);
+    // @ts-ignore
+    window.__countriesGeo = await res.json();
+  }
+  // @ts-ignore
+  const data = window.__countriesGeo as any;
+  const f = (data.features || []).find((x: any) => x?.properties?.name === name);
+  if (!f) return 3.2; // fallback zoom
+
+  // Try to read 'area' property, or estimate from bbox if missing
+  const area = f.properties?.area || estimateFeatureArea(f);
+
+  // Normalize area (km² → arbitrary scale)
+  // You can tune these constants for feel
+  const minZoom = 1.9; // closest
+  const maxZoom = 3.2; // farthest
+  const logArea = Math.log(area + 1); // reduce range impact
+  const normalized = Math.min(1, Math.max(0, (logArea - 8) / 7)); // area ≈ e⁸ to e¹⁵
+
+  // Interpolate between minZoom and maxZoom
+  return minZoom + normalized * (maxZoom - minZoom);
+}
+
+// fallback if area not provided in geojson
+function estimateFeatureArea(feature: any): number {
+  const coords = feature.geometry?.coordinates;
+  if (!coords) return 1_000_000; // fallback area
+  let total = 0;
+  const process = (poly: number[][]) => {
+    for (let i = 0; i < poly.length - 1; i++) {
+      const [x1, y1] = poly[i];
+      const [x2, y2] = poly[i + 1];
+      total += x1 * y2 - x2 * y1;
+    }
+  };
+  if (feature.geometry.type === "Polygon") process(coords[0]);
+  else if (feature.geometry.type === "MultiPolygon") coords.forEach((p: any) => process(p[0]));
+  return Math.abs(total) / 2; // rough planar area
+}
 
 useEffect(() => {
   (async () => {
@@ -119,6 +166,7 @@ useEffect(() => {
     toDir.current.copy(dirNext);
 
     t.current = 0.0001;
+    targetRadiusRef.current = null;
   })();
 }, [focusName, controlsRef, camera]);
 
@@ -127,7 +175,17 @@ useEffect(() => {
   // animate: spherical slerp along the orbit; optional idle Y-spin
 // animate: spherical slerp along the orbit; optional idle Y-spin
 useFrame((_, delta) => {
-  const radius = camera.position.length();
+  // Only fetch zoom level once per country change
+  if (t.current < 1 && focusName && targetRadiusRef.current === null) {
+    (async () => {
+      targetRadiusRef.current = await getZoomForCountry(focusName);
+    })();
+  }
+
+  const currentRadius = camera.position.length();
+  const targetRadius = targetRadiusRef.current ?? currentRadius;
+  const zoomLerpSpeed = 2.0;
+  const radius = THREE.MathUtils.lerp(currentRadius, targetRadius, delta * zoomLerpSpeed);
 
   // Smooth ease — slower, more natural
   if (t.current < 1) {
@@ -148,13 +206,14 @@ useFrame((_, delta) => {
       .add(rel.multiplyScalar(Math.sin(theta)))
       .normalize();
 
-    // Move camera along spherical arc
     camera.position.copy(dir.multiplyScalar(radius));
     controlsRef.current?.update();
-  } else if (isRotationEnabled) {
-    groupRef.current?.rotateY(delta * 0.02); // idle spin
-  }
+  }// else if (isRotationEnabled) {
+  //  groupRef.current?.rotateY(delta * 0.02); // idle spin
+ // }
 });
+
+
 
 
 
