@@ -1,13 +1,11 @@
 "use client";
 
-import { Canvas, useFrame, useLoader } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import {
   TextureLoader,
   SRGBColorSpace,
   Group,
-  Vector3,
-  Quaternion,
 } from "three";
 import { useEffect, useRef, useState, Suspense } from "react";
 import CountryBorders from "./CountryBorders";
@@ -16,6 +14,7 @@ import { useCountryClick } from "../hooks/CountryClick";
 import CountryInfoPanel from "./CountryInfoPanel";
 import * as THREE from "three";
 
+/** ---------- Earth ---------- */
 function Earth({ isDark }: { isDark: boolean }) {
   const [dayTexture, nightTexture] = useLoader(TextureLoader, [
     "/textures/earth.jpg",
@@ -38,71 +37,124 @@ function Earth({ isDark }: { isDark: boolean }) {
   );
 }
 
-
 function RotatingGroup({
   isDark,
   isRotationEnabled,
   onCountrySelect,
-  focusTarget,
+  focusName,
+  controlsRef,
 }: {
   isDark: boolean;
   isRotationEnabled: boolean;
   onCountrySelect: (name: string) => void;
-  focusTarget: { lat: number; lon: number } | null;
+  focusName: string | null;
+  controlsRef: React.RefObject<any>;
 }) {
   const groupRef = useRef<Group>(null);
-  const targetQuat = useRef(new THREE.Quaternion());
+  const { camera } = useThree();
 
-  const FRONT = new THREE.Vector3(0, 0, 1); 
-  const WORLD_UP = new THREE.Vector3(0, 1, 0);
-  const LON_OFFSET = Math.PI / 2; 
+  // cache: country name -> unit vector (from label_x/label_y)
+  const vectorsCache = useRef(new Map<string, THREE.Vector3>());
 
-  useFrame((_, delta) => {
-    const g = groupRef.current;
-    if (!g) return;
-
-    if (focusTarget) {
-      g.quaternion.slerp(targetQuat.current, Math.min(1, delta * 2.2));
-    } else if (isRotationEnabled) {
-      g.rotateY(delta * 0.03);
-    }
-  });
+  // tween state
+  const fromDir = useRef(new THREE.Vector3(0, 0, -1));
+  const toDir   = useRef(new THREE.Vector3(0, 0, -1));
+  const t       = useRef(1);
 
   useCountryClick(onCountrySelect);
 
+  function latLongToVector3(lat: number, lon: number, radius = 1): THREE.Vector3 {
+  const phi = (90 - lat) * (Math.PI / 180);
+  const theta = (lon - 180) * (Math.PI / 180);
+
+  const x = radius * Math.sin(phi) * Math.cos(theta);
+  const y = -radius * Math.cos(phi);
+  const z = -radius * Math.sin(phi) * Math.sin(theta);
+
+  return new THREE.Vector3(x, y, z);
+}
+  async function getVector(name: string): Promise<THREE.Vector3 | null> {
+    if (vectorsCache.current.has(name)) return vectorsCache.current.get(name)!;
+
+
+    // @ts-ignore
+    if (!window.__countriesGeo) {
+      const res = await fetch(`${window.location.origin}/data/countries.geojson`);
+      // @ts-ignore
+      window.__countriesGeo = await res.json();
+    }
+    // @ts-ignore
+    const data = window.__countriesGeo as any;
+
+    const f = (data.features || []).find((x: any) => x?.properties?.name === name);
+    if (!f) return null;
+
+    const { label_x: lon, label_y: lat } = f.properties || {};
+    if (typeof lat !== "number" || typeof lon !== "number") return null;
+
+    const v = latLongToVector3(lat, lon, 1).normalize();
+    vectorsCache.current.set(name, v);
+    return v;
+  }
+
 useEffect(() => {
-  if (!focusTarget) return;
+  (async () => {
+    if (!focusName) return;
 
-  const φ = THREE.MathUtils.degToRad(focusTarget.lat);
-  const λ = THREE.MathUtils.degToRad(focusTarget.lon);
+    const v = await getVector(focusName);
+    if (!v) return;
 
-  const LON_OFFSET = Math.PI / 2;
+    const controls = controlsRef.current;
+    if (controls) {
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
 
+    camera.updateMatrixWorld(true);
 
-  const s = new THREE.Vector3(
-    Math.cos(φ) * Math.sin(λ + LON_OFFSET),
-    Math.sin(φ),
-    Math.cos(φ) * Math.cos(λ + LON_OFFSET)
-  ).normalize();
+    const dirNow = camera.position.clone().normalize();
+    const dirNext = v.clone().negate().normalize();
 
+    fromDir.current.copy(dirNow);
+    toDir.current.copy(dirNext);
 
-  const qBase = new THREE.Quaternion().setFromUnitVectors(s, new THREE.Vector3(0, 0, 1));
-
-
-  const northAfter = new THREE.Vector3(0, 1, 0).applyQuaternion(qBase);
-
-
-  const flatNorth = new THREE.Vector3(northAfter.x, 0, northAfter.z).normalize();
-  const dot = THREE.MathUtils.clamp(flatNorth.dot(new THREE.Vector3(0, 0, 1)), -1, 1);
-  const cross = flatNorth.cross(new THREE.Vector3(0, 0, 1));
-  const rollAngle = cross.y < 0 ? -Math.acos(dot) : Math.acos(dot);
+    t.current = 0.0001;
+  })();
+}, [focusName, controlsRef, camera]);
 
 
-  const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollAngle);
-  qBase.premultiply(qRoll);
 
-  targetQuat.current.copy(qBase);
-}, [focusTarget]);
+  // animate: spherical slerp along the orbit; optional idle Y-spin
+// animate: spherical slerp along the orbit; optional idle Y-spin
+useFrame((_, delta) => {
+  const radius = camera.position.length();
+
+  // Smooth ease — slower, more natural
+  if (t.current < 1) {
+    t.current = Math.min(1, t.current + delta * 0.8);
+    const k = 1 - Math.exp(-3.5 * t.current);
+
+    // Spherical interpolation helper (avoids pole flip)
+    const dot = Math.min(Math.max(fromDir.current.dot(toDir.current), -1), 1);
+    const theta = Math.acos(dot) * k;
+    const rel = toDir.current
+      .clone()
+      .sub(fromDir.current.clone().multiplyScalar(dot))
+      .normalize();
+
+    const dir = fromDir.current
+      .clone()
+      .multiplyScalar(Math.cos(theta))
+      .add(rel.multiplyScalar(Math.sin(theta)))
+      .normalize();
+
+    // Move camera along spherical arc
+    camera.position.copy(dir.multiplyScalar(radius));
+    controlsRef.current?.update();
+  } else if (isRotationEnabled) {
+    groupRef.current?.rotateY(delta * 0.02); // idle spin
+  }
+});
 
 
 
@@ -116,18 +168,17 @@ useEffect(() => {
 }
 
 
+
+/** ---------- Globe (parent) ---------- */
 export default function Globe() {
   const [isDark, setIsDark] = useState(false);
   const [isRotationEnabled, setIsRotationEnabled] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
-  const [focusTarget, setFocusTarget] = useState<{
-    lat: number;
-    lon: number;
-  } | null>(null);
-
+  const [focusName, setFocusName] = useState<string | null>(null);
   const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
+  const controlsRef = useRef<any>(null);
 
-
+  // Detect dark mode changes
   useEffect(() => {
     const update = () =>
       setIsDark(document.documentElement.classList.contains("dark"));
@@ -140,24 +191,26 @@ export default function Globe() {
     return () => observer.disconnect();
   }, []);
 
-
+  // External "focus-country" event: detail = { name }
   useEffect(() => {
     const handleFocus = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (!detail) return;
+      if (!detail?.name) return;
+
       setSelectedCountry(detail.name);
-      setFocusTarget({ lat: detail.lat, lon: detail.lon });
+      setFocusName(detail.name);
       setIsRotationEnabled(false);
     };
     window.addEventListener("focus-country", handleFocus);
     return () => window.removeEventListener("focus-country", handleFocus);
   }, []);
 
+  // Interaction timers (resume idle rotation after 60s)
   const handleUserInteractionEnd = () => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
     inactivityTimer.current = setTimeout(() => {
       setIsRotationEnabled(true);
-      setFocusTarget(null);
+      setFocusName(null);
     }, 60000);
   };
 
@@ -178,24 +231,30 @@ export default function Globe() {
           <RotatingGroup
             isDark={isDark}
             isRotationEnabled={isRotationEnabled}
-            onCountrySelect={setSelectedCountry}
-            focusTarget={focusTarget}
+            onCountrySelect={(name) => {
+              setSelectedCountry(name);
+              setFocusName(name);
+              setIsRotationEnabled(false);
+            }}
+            focusName={focusName}
+            controlsRef={controlsRef}
           />
         </Suspense>
 
         <OrbitControls
+          ref={controlsRef}
           enablePan={false}
           enableZoom
           minDistance={1.8}
           maxDistance={3.2}
           zoomSpeed={0.4}
           rotateSpeed={0.6}
+          // keep world Y as up -> poles fixed
           onStart={handleUserInteractionStart}
           onEnd={handleUserInteractionEnd}
         />
       </Canvas>
 
-      {/* Info panel on right */}
       <CountryInfoPanel
         selected={selectedCountry}
         onClose={() => setSelectedCountry(null)}

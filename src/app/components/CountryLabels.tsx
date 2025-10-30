@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import * as THREE from "three";
 import { Billboard, Text } from "@react-three/drei";
 import { useThree, useFrame } from "@react-three/fiber";
+import { setCountryVector } from "../lib/countryVectors";
 
 function latLongToVector3(lat: number, lon: number, radius = 1.23) {
   const phi = (90 - lat) * (Math.PI / 180);
@@ -105,7 +106,7 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
 
           const pos = latLongToVector3(label_y, label_x, 1.225);
           let extent = 0;
-
+          setCountryVector(name, pos);
           try {
             const geom = f.geometry;
             const polygons =
