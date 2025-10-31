@@ -6,6 +6,8 @@ import { ThemeProvider, useTheme } from "./themeProvider";
 import ThemeToggle from "./components/themeToggle";
 import Background from "./components/Background";
 import SearchBar from "./components/SearchBar";
+import LogoIntro from "./components/LogoIntro";
+import { useState } from "react";
 
 const themeInit = `
 (function() {
@@ -43,22 +45,24 @@ function Navbar() {
       ${isDark ? "text-gray-100" : "text-slate-800"}`}
     >
       {/* Left: Logo */}
-      <div className="flex items-center gap-2 select-none">
-        <div
-          className="w-7 h-7 rounded-full flex items-center justify-center text-white font-semibold text-sm"
-          style={{
-            background: isDark
-              ? "linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%)"
-              : "linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)",
-            boxShadow: isDark
-              ? "0 0 10px rgba(59,130,246,0.4)"
-              : "0 0 8px rgba(59,130,246,0.3)",
-          }}
-        >
-          O
-        </div>
-        <h1 className="text-lg font-semibold tracking-tight">Orbital</h1>
-      </div>
+<div className="flex items-center select-none">
+  <img
+    src="/logo.png"
+    alt="Orbital Logo"
+    className="w-[2.6rem] h-[2.6rem] object-contain mr-[2px]"
+  />
+  <h1
+    className={`text-[1.25rem] font-semibold tracking-tight leading-none ${
+      isDark ? "text-white" : "text-white"
+    }`}
+    style={{ marginLeft: "-15%" }}
+  >
+    rbital
+  </h1>
+</div>
+
+
+
 
       {/* Center: Search */}
       <div className="flex-1 flex justify-center">
@@ -82,18 +86,18 @@ function Navbar() {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+const [showIntro, setShowIntro] = useState(true);
+
   return (
     <html lang="en" className="!scroll-smooth" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
-      </head>
       <body
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased overflow-hidden`}
       >
         <ThemeProvider>
-          <Navbar />
           <Background />
+          <Navbar />
           {children}
+          <LogoIntro />
         </ThemeProvider>
       </body>
     </html>
