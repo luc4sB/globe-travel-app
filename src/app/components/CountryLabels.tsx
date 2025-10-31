@@ -6,7 +6,7 @@ import { Billboard, Text } from "@react-three/drei";
 import { useThree, useFrame } from "@react-three/fiber";
 import { setCountryVector } from "../lib/countryVectors";
 
-function latLongToVector3(lat: number, lon: number, radius = 1.23) {
+function latLongToVector3(lat: number, lon: number, radius = 1.275) {
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
   return new THREE.Vector3(

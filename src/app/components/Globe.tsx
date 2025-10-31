@@ -279,9 +279,9 @@ export default function Globe() {
   };
 
   return (
-    <div className="relative flex items-center justify-center w-full h-[520px] overflow-hidden">
+    <div className="relative flex items-center justify-center w-full h-screen overflow-hidden">
       <Canvas
-        camera={{ position: [0, 0, 3.2], fov: 45 }}
+        camera={{ position: [35, 30, 3.2], fov: 45 }}
         gl={{ alpha: true, antialias: true }}
         performance={{ min: 0.3 }}
       >

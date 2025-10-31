@@ -60,3 +60,37 @@ body {
 }
 
 
+body {
+  @apply bg-gradient-to-b from-sky-50 via-white to-sky-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950;
+  color: var(--foreground);
+  font-family: "Inter", "Segoe UI", sans-serif;
+  overflow-x: hidden;
+}
+
+/* Modern glass effect cards */
+.glass {
+  @apply bg-white/50 dark:bg-zinc-800/50 backdrop-blur-xl shadow-lg border border-white/30 dark:border-zinc-700/30 rounded-2xl;
+}
+
+/* Smooth fade-in animations */
+.fade-in {
+  animation: fadeIn 0.8s ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden; /* hides scrollbars completely */
+}
+main {
+  padding: 0;
+  margin: 0;
+  height: 100vh;
+}

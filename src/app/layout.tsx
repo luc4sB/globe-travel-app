@@ -7,7 +7,6 @@ import ThemeToggle from "./components/themeToggle";
 import Background from "./components/Background";
 import SearchBar from "./components/SearchBar";
 
-/** Theme initialization script (runs before hydration) */
 const themeInit = `
 (function() {
   try {
@@ -25,68 +24,76 @@ function Navbar() {
 
   return (
     <nav
-      className={`fixed top-0 left-0 w-full z-50 flex items-center justify-between px-6 py-3 transition-all backdrop-blur-md border-b ${
-        isDark
-          ? "bg-[#0b0e1a]/70 border-white/10 text-gray-100"
-          : "bg-white/70 border-black/10 text-slate-800"
-      }`}
+      style={
+        {
+          "--nav-height": "70px",
+          backgroundColor: isDark
+            ? "rgba(10, 10, 20, 0.001)"
+            : "rgba(255, 255, 255, 0.001)",
+          borderColor: isDark
+            ? "rgba(255,255,255,0.05)"
+            : "rgba(255,255,255,0.25)",
+          boxShadow: isDark
+            ? "0 0 25px rgba(0,0,0,0.2)"
+            : "0 0 20px rgba(0,0,0,0.05)",
+        } as React.CSSProperties
+      }
+      className={`fixed top-0 left-0 w-full z-50 flex items-center justify-between
+      px-8 py-3 h-[var(--nav-height)] backdrop-blur-[40px] border-b transition-all duration-300
+      ${isDark ? "text-gray-100" : "text-slate-800"}`}
     >
-      {/* Logo */}
+      {/* Left: Logo */}
       <div className="flex items-center gap-2 select-none">
         <div
-          className="w-7 h-7 rounded-full relative overflow-hidden"
+          className="w-7 h-7 rounded-full flex items-center justify-center text-white font-semibold text-sm"
           style={{
             background: isDark
-              ? "radial-gradient(circle at 30% 30%, #2f80ed, #0b0e1a)"
-              : "radial-gradient(circle at 30% 30%, #60a5fa, #1e3a8a)",
+              ? "linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%)"
+              : "linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)",
             boxShadow: isDark
-              ? "0 0 8px rgba(96,165,250,0.5)"
-              : "0 0 6px rgba(96,165,250,0.6)",
+              ? "0 0 10px rgba(59,130,246,0.4)"
+              : "0 0 8px rgba(59,130,246,0.3)",
           }}
         >
-          <div
-            className="absolute left-1/2 top-1/2 w-[130%] h-[2px]"
-            style={{
-              background:
-                "linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent)",
-              transform: "translate(-50%, -50%) rotate(35deg)",
-            }}
-          />
+          O
         </div>
-        <h1 className="text-xl font-semibold tracking-wide">Orbital</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Orbital</h1>
       </div>
 
-      {/* Center: Country Search Bar */}
-      <div className="hidden md:flex flex-1 justify-center max-w-md">
-        <SearchBar />
+      {/* Center: Search */}
+      <div className="flex-1 flex justify-center">
+        <div className="w-full max-w-md">
+          <SearchBar />
+        </div>
       </div>
 
-      {/* Right: Theme toggle */}
-      <div className="flex items-center gap-3">
+      {/* Right: Links + Theme */}
+      <div className="flex items-center gap-4">
+        <button className="hidden sm:inline text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-sky-400 transition-colors">
+          Explore
+        </button>
+        <button className="hidden sm:inline text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-sky-400 transition-colors">
+          Flights
+        </button>
         <ThemeToggle />
       </div>
     </nav>
   );
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="!scroll-smooth" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
       <body
-        className={`${GeistSans.variable} ${GeistMono.variable} antialiased overflow-x-hidden`}
+        className={`${GeistSans.variable} ${GeistMono.variable} antialiased overflow-hidden`}
       >
         <ThemeProvider>
           <Navbar />
           <Background />
-          {/* Main content with top padding to clear navbar */}
-          <main className="pt-20">{children}</main>
+          {children}
         </ThemeProvider>
       </body>
     </html>
