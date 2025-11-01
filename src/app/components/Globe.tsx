@@ -32,8 +32,11 @@ function Earth({ isDark }: { isDark: boolean }) {
         metalness={0}
         emissive={isDark ? "#000000" : "#a3b3ff"}
         emissiveIntensity={isDark ? 0 : 0.045}
+        depthWrite={true}
+        depthTest={true}
       />
     </mesh>
+    
   );
 }
 
@@ -318,40 +321,45 @@ useEffect(() => {
 
   return (
     <div className="relative flex items-center justify-center w-full h-screen overflow-hidden">
-      <Canvas
-        camera={{ position: [35, 30, 3.2], fov: 45 }}
-        gl={{ alpha: true, antialias: true }}
-        performance={{ min: 0.3 }}
-      >
-        <ambientLight intensity={isDark ? 8.4 : 4.5} />
-        <Suspense fallback={null}>
-          <RotatingGroup
-            isDark={isDark}
-            isRotationEnabled={isRotationEnabled}
-            onCountrySelect={(name) => {
-              preloadCountryImages(name); //start loading images immediately
-              setSelectedCountry(name);
-              setFocusName(name);
-              setIsRotationEnabled(false);
-            }}
-            focusName={focusName}
-            controlsRef={controlsRef}
-          />
-        </Suspense>
+<Canvas
+  camera={{ position: [35, 30, 3.2], fov: 45 }}
+  gl={{ alpha: true, antialias: true }}
+  performance={{ min: 0.3 }}
+  onCreated={({ camera }) => {
+    camera.layers.enable(0); // Globe layer
+    camera.layers.enable(1); // Labels layer
+  }}
+>
+  <ambientLight intensity={isDark ? 8.4 : 4.5} />
 
-        <OrbitControls
-          ref={controlsRef}
-          enablePan={false}
-          enableZoom
-          minDistance={1.8}
-          maxDistance={3.2}
-          zoomSpeed={0.4}
-          rotateSpeed={0.6}
-          // keep world Y as up -> poles fixed
-          onStart={handleUserInteractionStart}
-          onEnd={handleUserInteractionEnd}
-        />
-      </Canvas>
+  <Suspense fallback={null}>
+    <RotatingGroup
+      isDark={isDark}
+      isRotationEnabled={isRotationEnabled}
+      onCountrySelect={(name) => {
+        preloadCountryImages(name);
+        setSelectedCountry(name);
+        setFocusName(name);
+        setIsRotationEnabled(false);
+      }}
+      focusName={focusName}
+      controlsRef={controlsRef}
+    />
+  </Suspense>
+
+  <OrbitControls
+    ref={controlsRef}
+    enablePan={false}
+    enableZoom
+    minDistance={1.8}
+    maxDistance={3.2}
+    zoomSpeed={0.4}
+    rotateSpeed={0.6}
+    onStart={handleUserInteractionStart}
+    onEnd={handleUserInteractionEnd}
+  />
+</Canvas>
+
 
 {panelVisible && selectedCountry && (
   <CountryInfoPanel
