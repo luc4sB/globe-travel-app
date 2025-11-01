@@ -72,23 +72,39 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
     fetch(url)
       .then((r) => r.json())
       .then((data) => {
-        const blacklist = new Set([
-          // Territories, microstates, etc.
-          "Isle of Man", "Guernsey", "Jersey", "Gibraltar",
-          "Svalbard", "Åland", "Liechtenstein", "San Marino",
-          "Andorra", "Monaco", "Vatican", "Kosovo", "Northern Cyprus",
-          "Western Sahara", "Somaliland", "Taiwan", "Hong Kong",
-          "Macau", "Bermuda", "Puerto Rico", "Falkland Islands",
-          "French Guiana", "Reunion", "Mayotte", "Guadeloupe", "Martinique",
-          "Cayman Islands", "Aruba", "Curaçao", "Guam", "American Samoa",
-          "Northern Mariana Islands", "New Caledonia", "French Polynesia",
-          "Wallis and Futuna", "Pitcairn Islands", "Saint Helena",
-          "Saint Kitts and Nevis", "Antigua and Barbuda", "Dominica",
-          "Saint Lucia", "Grenada", "Barbados", "Comoros", "Seychelles",
-          "Mauritius", "Maldives", "Micronesia", "Palau", "Nauru", "Tuvalu",
-          "Kiribati", "Marshall Islands", "Vanuatu", "Samoa", "Tonga",
-          "Niue", "Cook Islands", "Tokelau", "Cape Verde"
-        ]);
+const blacklist = new Set([
+  // Europe / microstates / dependencies
+  "Isle of Man", "Guernsey", "Jersey", "Gibraltar", "Svalbard", "Åland",
+  "Liechtenstein", "San Marino", "Andorra", "Monaco", "Vatican",
+  "Kosovo", "Northern Cyprus", "Faroe Islands", "Azores", "Madeira",
+  "Canary Islands", "Jan Mayen", "Saint Pierre and Miquelon", "Greenland",
+
+  // Disputed / unrecognized / non-sovereign
+  "Western Sahara", "Somaliland", "Palestine", "Taiwan", "Bir Tawil",
+  "Spratly Islands", "Paracel Islands", "Scarborough Shoal",
+  "Aksai Chin", "Arunachal Pradesh", "Kashmir", "Ashmore and Cartier Islands",
+  "Coral Sea Islands", "Heard Island and McDonald Islands",
+  "South Georgia and the South Sandwich Islands", "Bouvet Island",
+  "Tristan da Cunha", "British Indian Ocean Territory", "Diego Garcia",
+
+  // Asia / special admin regions
+  "Hong Kong", "Macau",
+
+  // Americas / Caribbean territories
+  "Bermuda", "Puerto Rico", "Falkland Islands", "French Guiana",
+  "Reunion", "Mayotte", "Guadeloupe", "Martinique", "Cayman Islands",
+  "Aruba", "Curaçao", "Guam", "American Samoa", "Northern Mariana Islands",
+  "New Caledonia", "French Polynesia", "Wallis and Futuna", "Pitcairn Islands",
+  "Saint Helena", "Saint Kitts and Nevis", "Antigua and Barbuda", "Dominica",
+  "Saint Lucia", "Grenada", "Barbados", "Comoros", "Seychelles", "Mauritius",
+  "Maldives", "Micronesia", "Palau", "Nauru", "Tuvalu", "Kiribati",
+  "Marshall Islands", "Vanuatu", "Samoa", "Tonga", "Niue", "Cook Islands",
+  "Tokelau", "Cape Verde", "Anguilla", "British Virgin Islands",
+  "U.S. Virgin Islands", "Saint Barthélemy", "Saint Martin", "Sint Maarten",
+  "Turks and Caicos Islands", "Montserrat", "Bonaire", "Norfolk Island",
+  "Christmas Island", "Cocos (Keeling) Islands", "Easter Island"
+]);
+
 
         const alwaysKeep = new Set([
           "Russia", "China", "United States", "Canada", "Brazil",

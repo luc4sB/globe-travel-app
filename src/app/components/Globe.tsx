@@ -184,14 +184,13 @@ useFrame((_, delta) => {
 
   const currentRadius = camera.position.length();
   const targetRadius = targetRadiusRef.current ?? currentRadius;
-  const zoomLerpSpeed = 2.0;
+  const zoomLerpSpeed = 1.2;
   const radius = THREE.MathUtils.lerp(currentRadius, targetRadius, delta * zoomLerpSpeed);
 
   // Smooth ease — slower, more natural
-  if (t.current < 1) {
-    t.current = Math.min(1, t.current + delta * 0.8);
-    const k = 1 - Math.exp(-3.5 * t.current);
-
+    if (t.current < 1) {
+      t.current = Math.min(1, t.current + delta * 0.4); // slower blend
+      const k = 1 - Math.exp(-2.2 * t.current);
     // Spherical interpolation helper (avoids pole flip)
     const dot = Math.min(Math.max(fromDir.current.dot(toDir.current), -1), 1);
     const theta = Math.acos(dot) * k;
@@ -234,6 +233,8 @@ export default function Globe() {
   const [isRotationEnabled, setIsRotationEnabled] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [focusName, setFocusName] = useState<string | null>(null);
+  const [imageCache, setImageCache] = useState(new Map<string, string[]>());
+  const [preloadedImages, setPreloadedImages] = useState<string[]>([]);
   const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
   const controlsRef = useRef<any>(null);
 
@@ -264,7 +265,7 @@ export default function Globe() {
     return () => window.removeEventListener("focus-country", handleFocus);
   }, []);
 
-  // Interaction timers (resume idle rotation after 60s)
+  // Interaction timers (resume idle rotation after 60s) OUTDATED
   const handleUserInteractionEnd = () => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
     inactivityTimer.current = setTimeout(() => {
@@ -277,6 +278,43 @@ export default function Globe() {
     if (isRotationEnabled) setIsRotationEnabled(false);
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
   };
+
+  const [panelVisible, setPanelVisible] = useState(false);
+async function preloadCountryImages(name: string) {
+  if (imageCache.has(name)) {
+    setPreloadedImages(imageCache.get(name)!);
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/countryImages?name=${encodeURIComponent(name)}`);
+    const d = await res.json();
+    const urls = d.urls?.length
+      ? d.urls
+      : ["/fallbacks/landscape.jpg", "/fallbacks/mountain.jpg"];
+
+    imageCache.set(name, urls);
+    setImageCache(new Map(imageCache)); // force re-render
+    setPreloadedImages(urls);
+  } catch {
+    setPreloadedImages(["/fallbacks/landscape.jpg", "/fallbacks/mountain.jpg"]);
+  }
+}
+
+useEffect(() => {
+  if (!selectedCountry) {
+    setPanelVisible(false);
+    return;
+  }
+  preloadCountryImages(selectedCountry);
+  setPanelVisible(false);
+  const timer = setTimeout(() => {
+    setPanelVisible(true);
+  }, 1500); // 1.5s delay
+
+  return () => clearTimeout(timer);
+}, [selectedCountry]);
+
 
   return (
     <div className="relative flex items-center justify-center w-full h-screen overflow-hidden">
@@ -291,6 +329,7 @@ export default function Globe() {
             isDark={isDark}
             isRotationEnabled={isRotationEnabled}
             onCountrySelect={(name) => {
+              preloadCountryImages(name); //start loading images immediately
               setSelectedCountry(name);
               setFocusName(name);
               setIsRotationEnabled(false);
@@ -314,10 +353,14 @@ export default function Globe() {
         />
       </Canvas>
 
-      <CountryInfoPanel
-        selected={selectedCountry}
-        onClose={() => setSelectedCountry(null)}
-      />
+{panelVisible && selectedCountry && (
+  <CountryInfoPanel
+    key={selectedCountry.replace(/\s+/g, "-").toLowerCase()}
+    selected={selectedCountry}
+    onClose={() => setSelectedCountry(null)}
+    preloadedImages={preloadedImages}
+  />
+)}
     </div>
   );
 }

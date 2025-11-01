@@ -13,26 +13,67 @@ export default function SearchBar() {
   const [suggestions, setSuggestions] = useState<Country[]>([]);
   const [allCountries, setAllCountries] = useState<Country[]>([]);
   const [isClient, setIsClient] = useState(false);
+const blacklist = new Set([
+  // Europe / microstates / dependencies
+  "Isle of Man", "Guernsey", "Jersey", "Gibraltar", "Svalbard", "Åland",
+  "Liechtenstein", "San Marino", "Andorra", "Monaco", "Vatican",
+  "Kosovo", "Northern Cyprus", "Faroe Islands", "Azores", "Madeira",
+  "Canary Islands", "Jan Mayen", "Saint Pierre and Miquelon", "Greenland",
+
+  // Disputed / unrecognized / non-sovereign
+  "Western Sahara", "Somaliland", "Palestine", "Taiwan", "Bir Tawil",
+  "Spratly Islands", "Paracel Islands", "Scarborough Shoal",
+  "Aksai Chin", "Arunachal Pradesh", "Kashmir", "Ashmore and Cartier Islands",
+  "Coral Sea Islands", "Heard Island and McDonald Islands",
+  "South Georgia and the South Sandwich Islands", "Bouvet Island",
+  "Tristan da Cunha", "British Indian Ocean Territory", "Diego Garcia",
+
+  // Asia / special admin regions
+  "Hong Kong", "Macau",
+
+  // Americas / Caribbean territories
+  "Bermuda", "Puerto Rico", "Falkland Islands", "French Guiana",
+  "Reunion", "Mayotte", "Guadeloupe", "Martinique", "Cayman Islands",
+  "Aruba", "Curaçao", "Guam", "American Samoa", "Northern Mariana Islands",
+  "New Caledonia", "French Polynesia", "Wallis and Futuna", "Pitcairn Islands",
+  "Saint Helena", "Saint Kitts and Nevis", "Antigua and Barbuda", "Dominica",
+  "Saint Lucia", "Grenada", "Barbados", "Comoros", "Seychelles", "Mauritius",
+  "Maldives", "Micronesia", "Palau", "Nauru", "Tuvalu", "Kiribati",
+  "Marshall Islands", "Vanuatu", "Samoa", "Tonga", "Niue", "Cook Islands",
+  "Tokelau", "Cape Verde", "Anguilla", "British Virgin Islands",
+  "U.S. Virgin Islands", "Saint Barthélemy", "Saint Martin", "Sint Maarten",
+  "Turks and Caicos Islands", "Montserrat", "Bonaire", "Norfolk Island",
+  "Christmas Island", "Cocos (Keeling) Islands", "Easter Island"
+]);
 
   useEffect(() => setIsClient(true), []);
 
 
-  useEffect(() => {
-    const url = `${window.location.origin}/data/countries.geojson`;
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        const countries: Country[] = (data.features ?? [])
-          .filter((f: any) => f.properties?.name && f.properties?.label_y && f.properties?.label_x)
-          .map((f: any) => ({
-            name: f.properties.name,
-            lat: f.properties.label_y,
-            lon: f.properties.label_x,
-          }));
-        setAllCountries(countries);
-      })
-      .catch((err) => console.error("Failed to load countries.geojson", err));
-  }, []);
+useEffect(() => {
+  const url = `${window.location.origin}/data/countries.geojson`;
+  fetch(url)
+    .then((res) => res.json())
+    .then((data) => {
+      const countries: Country[] = (data.features ?? [])
+        .filter((f: any) => {
+          const name = f.properties?.name;
+          return (
+            name &&
+            f.properties?.label_y &&
+            f.properties?.label_x &&
+            !blacklist.has(name)
+          );
+        })
+        .map((f: any) => ({
+          name: f.properties.name,
+          lat: f.properties.label_y,
+          lon: f.properties.label_x,
+        }));
+      setAllCountries(countries);
+    })
+    .catch((err) => console.error("Failed to load countries.geojson", err));
+}, []);
+
 
   if (!isClient) return null;
 

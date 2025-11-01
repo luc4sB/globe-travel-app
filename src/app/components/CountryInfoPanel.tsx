@@ -8,27 +8,53 @@ import { X, Loader2 } from "lucide-react";
 type Props = {
   selected: string | null;
   onClose: () => void;
+  preloadedImages?: string[];
 };
 
 const imageCache = new Map<string, string[]>();
 const defaultImages = ["/fallbacks/landscape.jpg", "/fallbacks/mountain.jpg"];
 
-export default function CountryInfoPanel({ selected, onClose }: Props) {
-  const [images, setImages] = useState<string[]>(defaultImages);
-  const [mainImage, setMainImage] = useState<string | null>(defaultImages[0]);
+export default function CountryInfoPanel({
+  selected,
+  onClose,
+  preloadedImages,
+}: Props) {
+  const [images, setImages] = useState<string[]>(
+    preloadedImages?.length ? preloadedImages : defaultImages
+  );
+  const [mainImage, setMainImage] = useState<string | null>(
+    preloadedImages?.[0] ?? defaultImages[0]
+  );
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!selected) return;
+    setImages(defaultImages);
+    setMainImage(defaultImages[0]);
+    setLoading(true);
+  }, [selected]);
 
+  useEffect(() => {
+    if (!selected) return;
+
+    // use preloaded images if provided
+    if (preloadedImages?.length) {
+      setImages(preloadedImages);
+      setMainImage(preloadedImages[0]);
+      setLoading(false);
+      return;
+    }
+
+    // use cached images if available
     if (imageCache.has(selected)) {
       const cached = imageCache.get(selected)!;
       setImages(cached);
       setMainImage(cached[0]);
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
+    // fetch from API
     fetch(`/api/countryImages?name=${encodeURIComponent(selected)}`)
       .then((r) => r.json())
       .then((d) => {
@@ -42,7 +68,7 @@ export default function CountryInfoPanel({ selected, onClose }: Props) {
         setMainImage(defaultImages[0]);
       })
       .finally(() => setLoading(false));
-  }, [selected]);
+  }, [selected, preloadedImages]);
 
   return (
     <AnimatePresence>
@@ -59,7 +85,7 @@ export default function CountryInfoPanel({ selected, onClose }: Props) {
 
           {/* Panel */}
           <motion.div
-            key="panel"
+            key={selected ? selected.replace(/\s+/g, "-").toLowerCase() : "panel"}
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
@@ -102,18 +128,13 @@ export default function CountryInfoPanel({ selected, onClose }: Props) {
 
               {/* Gallery */}
               <div
-                className={`p-4 gap-3 ${
-                  images.length < 3
-                    ? "grid grid-cols-2 sm:grid-cols-3"
-                    : "flex overflow-x-auto overflow-y-hidden scrollbar-hide"
-                  } `}
+                className="p-4 flex gap-4 overflow-x-auto overflow-y-hidden snap-x snap-mandatory"
               >
-
                 {images.map((src, i) => (
                   <button
                     key={i}
                     onClick={() => setMainImage(src)}
-                    className="relative flex-shrink-0 w-full sm:w-40 h-28 rounded-lg overflow-hidden"
+                    className="relative flex-shrink-0 w-[260px] aspect-[16/9] rounded-xl overflow-hidden snap-start"
                   >
                     <Image
                       src={src}
