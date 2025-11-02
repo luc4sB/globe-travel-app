@@ -4,6 +4,14 @@ import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { X, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+
+type Airport = {
+  name: string;
+  city: string;
+  country: string;
+  iata_code: string;
+};
 
 type Props = {
   selected: string | null;
@@ -14,30 +22,37 @@ type Props = {
 const imageCache = new Map<string, string[]>();
 const defaultImages = ["/fallbacks/landscape.jpg", "/fallbacks/mountain.jpg"];
 
-export default function CountryInfoPanel({
-  selected,
-  onClose,
-  preloadedImages,
-}: Props) {
-  const [images, setImages] = useState<string[]>(
-    preloadedImages?.length ? preloadedImages : defaultImages
-  );
-  const [mainImage, setMainImage] = useState<string | null>(
-    preloadedImages?.[0] ?? defaultImages[0]
-  );
+export default function CountryInfoPanel({ selected, onClose, preloadedImages }: Props) {
+  const [images, setImages] = useState<string[]>(preloadedImages ?? defaultImages);
+  const [mainImage, setMainImage] = useState<string | null>(preloadedImages?.[0] ?? defaultImages[0]);
   const [loading, setLoading] = useState(false);
 
+  const [airports, setAirports] = useState<Airport[]>([]);
+  const [filteredOptions, setFilteredOptions] = useState<Airport[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const [tripType, setTripType] = useState<"oneway" | "return">("oneway");
+  const [departAirport, setDepartAirport] = useState("");
+  const [departDate, setDepartDate] = useState("");
+  const [returnDate, setReturnDate] = useState("");
+
+  const router = useRouter();
+
+  // Load airports from local JSON
+  useEffect(() => {
+    fetch("/data/airports.json")
+      .then((res) => res.json())
+      .then((data) => setAirports(Array.isArray(data) ? data : data.airports ?? []))
+      .catch(() => setAirports([]));
+  }, []);
+
+  // Load and cache images for selected country
   useEffect(() => {
     if (!selected) return;
+    setLoading(true);
     setImages(defaultImages);
     setMainImage(defaultImages[0]);
-    setLoading(true);
-  }, [selected]);
 
-  useEffect(() => {
-    if (!selected) return;
-
-    // use preloaded images if provided
     if (preloadedImages?.length) {
       setImages(preloadedImages);
       setMainImage(preloadedImages[0]);
@@ -45,7 +60,6 @@ export default function CountryInfoPanel({
       return;
     }
 
-    // use cached images if available
     if (imageCache.has(selected)) {
       const cached = imageCache.get(selected)!;
       setImages(cached);
@@ -54,7 +68,6 @@ export default function CountryInfoPanel({
       return;
     }
 
-    // fetch from API
     fetch(`/api/countryImages?name=${encodeURIComponent(selected)}`)
       .then((r) => r.json())
       .then((d) => {
@@ -68,13 +81,71 @@ export default function CountryInfoPanel({
         setMainImage(defaultImages[0]);
       })
       .finally(() => setLoading(false));
-  }, [selected, preloadedImages]);
+  }, [selected]);
+
+  // Filter airports by user input
+  const handleAirportSearch = (value: string) => {
+    setDepartAirport(value);
+    if (!value.trim()) {
+      setFilteredOptions([]);
+      return;
+    }
+    const filtered = airports.filter(
+      (a) =>
+        a.name.toLowerCase().includes(value.toLowerCase()) ||
+        a.city.toLowerCase().includes(value.toLowerCase()) ||
+        a.iata_code.toLowerCase().includes(value.toLowerCase())
+    );
+    setFilteredOptions(filtered.slice(0, 8));
+  };
+
+  const handleDateChange = (type: "depart" | "return", value: string) => {
+    if (type === "depart") {
+      setDepartDate(value);
+      if (returnDate && value > returnDate) setReturnDate("");
+    } else {
+      if (!departDate || value >= departDate) setReturnDate(value);
+    }
+  };
+
+  const handleContinue = () => {
+    const selectedAirport = airports.find(
+      (a) =>
+        a.iata_code.toLowerCase() === departAirport.toLowerCase() ||
+        `${a.city} (${a.iata_code})`.toLowerCase() === departAirport.toLowerCase() ||
+        a.name.toLowerCase() === departAirport.toLowerCase()
+    );
+
+    if (!selectedAirport) {
+      alert("Please select a valid departure airport from the list.");
+      return;
+    }
+
+    if (!departDate) {
+      alert("Please select a departure date.");
+      return;
+    }
+
+    if (tripType === "return" && !returnDate) {
+      alert("Please select a valid return date.");
+      return;
+    }
+
+    const params = new URLSearchParams({
+      tripType,
+      depart: selectedAirport.iata_code,
+      departDate,
+      ...(tripType === "return" && { returnDate }),
+    });
+
+    router.push(`/airports/${encodeURIComponent(selected!)}?${params}`);
+  };
 
   return (
     <AnimatePresence>
       {selected && (
         <>
-          {/* Overlay */}
+          {/* Overlay for mobile */}
           <motion.div
             className="fixed inset-0 bg-black/30 backdrop-blur-sm md:hidden z-40"
             initial={{ opacity: 0 }}
@@ -83,28 +154,31 @@ export default function CountryInfoPanel({
             onClick={onClose}
           />
 
-          {/* Panel */}
+          {/* Glass Panel */}
           <motion.div
-            key={selected ? selected.replace(/\s+/g, "-").toLowerCase() : "panel"}
+            key={selected}
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 90, damping: 14 }}
-            className="fixed right-0 top-0 z-50 h-full w-full sm:w-[420px] bg-white dark:bg-zinc-900 border-l border-gray-300 dark:border-zinc-800 shadow-2xl overflow-y-auto"
+            className="fixed right-0 top-0 z-50 h-full w-full sm:w-[440px]
+                       backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40
+                       dark:from-zinc-900/70 dark:to-black/60 border-l border-white/10
+                       shadow-[0_0_40px_rgba(0,0,0,0.4)] overflow-y-auto"
           >
             <div className="relative h-full flex flex-col">
-              {/* Close */}
+              {/* Close button */}
               <button
                 onClick={onClose}
-                className="absolute top-4 right-4 p-2 rounded-full bg-white/80 dark:bg-zinc-800/60 hover:bg-white dark:hover:bg-zinc-800 transition z-10"
+                className="absolute top-4 right-4 p-2 rounded-full bg-white/20 dark:bg-zinc-800/60 hover:bg-white/30 transition z-10"
               >
-                <X size={20} className="text-gray-700 dark:text-gray-200" />
+                <X size={20} className="text-white" />
               </button>
 
-              {/* Hero */}
-              <div className="relative w-full h-48 sm:h-56 bg-zinc-200 dark:bg-zinc-800">
+              {/* Hero image */}
+              <div className="relative w-full h-64 bg-zinc-200 dark:bg-zinc-800">
                 {loading ? (
-                  <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                  <div className="flex items-center justify-center h-full text-gray-400">
                     <Loader2 className="animate-spin mr-2" /> Loading...
                   </div>
                 ) : (
@@ -115,68 +189,133 @@ export default function CountryInfoPanel({
                       alt={`${selected} hero`}
                       fill
                       priority
-                      loading="eager"
                       className="object-cover transition-opacity duration-300"
                     />
                   )
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
                 <h2 className="absolute bottom-3 left-4 text-2xl font-semibold text-white drop-shadow-md">
                   {selected}
                 </h2>
               </div>
 
-              {/* Gallery */}
-              <div
-                className="p-4 flex gap-4 overflow-x-auto overflow-y-hidden snap-x snap-mandatory"
-              >
-                {images.map((src, i) => (
+              {/* Thumbnail gallery */}
+              {images.length > 1 && (
+                <div className="p-4 flex gap-4 overflow-x-auto snap-x snap-mandatory scrollbar-hide">
+                  {images.map((src, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setMainImage(src)}
+                      className="relative flex-shrink-0 w-[220px] aspect-[16/9] rounded-xl overflow-hidden snap-start"
+                    >
+                      <Image
+                        src={src}
+                        alt={`${selected} view ${i + 1}`}
+                        fill
+                        loading="lazy"
+                        className={`object-cover shadow-sm transition-all duration-200 ${
+                          mainImage === src
+                            ? "ring-4 ring-sky-500 scale-[1.02]"
+                            : "hover:opacity-90"
+                        }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Trip Planner */}
+              <div className="p-6 space-y-5">
+                {/* Trip Type */}
+                <div className="flex justify-center gap-3">
                   <button
-                    key={i}
-                    onClick={() => setMainImage(src)}
-                    className="relative flex-shrink-0 w-[260px] aspect-[16/9] rounded-xl overflow-hidden snap-start"
+                    onClick={() => setTripType("oneway")}
+                    className={`px-5 py-1.5 rounded-full text-sm font-medium transition ${
+                      tripType === "oneway"
+                        ? "bg-sky-500 text-white shadow-md"
+                        : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
+                    }`}
                   >
-                    <Image
-                      src={src}
-                      alt={`${selected} view ${i + 1}`}
-                      fill
-                      loading="lazy"
-                      className={`object-cover shadow-sm transition-all duration-200 ${
-                        mainImage === src
-                          ? "ring-4 ring-blue-500 scale-[1.02]"
-                          : "hover:opacity-90"
-                      }`}
+                    One Way
+                  </button>
+                  <button
+                    onClick={() => setTripType("return")}
+                    className={`px-5 py-1.5 rounded-full text-sm font-medium transition ${
+                      tripType === "return"
+                        ? "bg-sky-500 text-white shadow-md"
+                        : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
+                    }`}
+                  >
+                    Return
+                  </button>
+                </div>
+
+                {/* Airport Search */}
+                <div className="relative">
+                  <label className="text-xs text-gray-300 mb-1 block">Departure Airport</label>
+                  <div className="glass flex items-center px-4 py-2 rounded-2xl shadow-md focus-within:ring-2 focus-within:ring-sky-400 transition-all">
+                    <input
+                      type="text"
+                      placeholder="Search airport or code..."
+                      value={departAirport}
+                      onChange={(e) => handleAirportSearch(e.target.value)}
+                      onFocus={() => setShowDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                      className="w-full bg-transparent text-gray-100 placeholder-gray-400 focus:outline-none text-sm"
                     />
-                  </button>
-                ))}
-              </div>
+                  </div>
 
-              {/* Info */}
-              <div className="flex flex-col gap-5 px-5 py-6 border-t border-gray-200 dark:border-zinc-800">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
-                    Explore {selected}
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                    Discover breathtaking landscapes, cultural landmarks, and
-                    travel opportunities in {selected}. Choose your departure
-                    airport below to explore available flights.
-                  </p>
+                  {showDropdown && filteredOptions.length > 0 && (
+                    <ul className="absolute left-0 right-0 mt-2 glass rounded-xl shadow-lg overflow-hidden z-[9999] max-h-56 overflow-y-auto backdrop-blur-lg scrollbar-hide">
+                      {filteredOptions.map((a) => (
+                        <li
+                          key={a.iata_code}
+                          onClick={() => {
+                            setDepartAirport(`${a.city} (${a.iata_code})`);
+                            setShowDropdown(false);
+                          }}
+                          className="px-4 py-2 cursor-pointer hover:bg-sky-100/70 dark:hover:bg-zinc-700/70 transition text-sm text-gray-800 dark:text-gray-100 flex justify-between"
+                        >
+                          <span>{a.city} — {a.name}</span>
+                          <span className="text-xs text-sky-400 font-mono">{a.iata_code}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
 
-                <div className="flex flex-col gap-3">
-                  <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-                    Find flights to {selected}
-                  </h4>
-                  <input
-                    type="text"
-                    placeholder="Enter departure airport (IATA)"
-                    className="p-2 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                  <button className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2 font-medium transition">
-                    Search Flights
-                  </button>
+                {/* Dates */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-300 mb-1 block">Departure Date</label>
+                    <input
+                      type="date"
+                      value={departDate}
+                      onChange={(e) => handleDateChange("depart", e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-white/10 dark:bg-zinc-900/40 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none"
+                    />
+                  </div>
+
+                  {tripType === "return" && (
+                    <div>
+                      <label className="text-xs text-gray-300 mb-1 block">Return Date</label>
+                      <input
+                        type="date"
+                        value={returnDate}
+                        onChange={(e) => handleDateChange("return", e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-white/10 dark:bg-zinc-900/40 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none"
+                      />
+                    </div>
+                  )}
                 </div>
+
+                {/* Continue button */}
+                <button
+                  onClick={handleContinue}
+                  className="w-full bg-sky-500 hover:bg-sky-600 text-white rounded-xl py-3 font-semibold transition-all shadow-md hover:shadow-lg mt-2"
+                >
+                  View Airports in {selected}
+                </button>
               </div>
             </div>
           </motion.div>

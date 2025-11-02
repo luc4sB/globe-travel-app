@@ -101,8 +101,6 @@ function RotatingGroup({
     vectorsCache.current.set(name, v);
     return v;
   }
-// --- helper: derive zoom distance from country area ---
-// Estimate camera zoom distance based on country's area (smaller country = closer zoom)
 async function getZoomForCountry(name: string): Promise<number> {
   // Load GeoJSON once and reuse it
   // @ts-ignore
@@ -114,20 +112,25 @@ async function getZoomForCountry(name: string): Promise<number> {
   // @ts-ignore
   const data = window.__countriesGeo as any;
   const f = (data.features || []).find((x: any) => x?.properties?.name === name);
-  if (!f) return 3.2; // fallback zoom
+  if (!f) return 3.0; // fallback zoom
 
-  // Try to read 'area' property, or estimate from bbox if missing
   const area = f.properties?.area || estimateFeatureArea(f);
 
-  // Normalize area (km² → arbitrary scale)
-  // You can tune these constants for feel
-  const minZoom = 1.9; // closest
-  const maxZoom = 3.2; // farthest
-  const logArea = Math.log(area + 1); // reduce range impact
-  const normalized = Math.min(1, Math.max(0, (logArea - 8) / 7)); // area ≈ e⁸ to e¹⁵
+  // Smooth curve mapping area → zoom
+  const minZoom = 2.0; // closest for very small countries
+  const maxZoom = 3.3; // farthest for very large countries
+  const logArea = Math.log10(area + 1);
 
-  // Interpolate between minZoom and maxZoom
-  return minZoom + normalized * (maxZoom - minZoom);
+  // Use a sigmoid instead of linear for better scaling across extremes
+  const normalized = 1 / (1 + Math.exp(-(logArea - 6.5))); // shift midpoint
+  const zoom = minZoom + normalized * (maxZoom - minZoom);
+
+  // Cap some specific large countries
+  if (["Australia", "Russia", "Canada", "United States", "China", "Brazil"].includes(name)) {
+    return Math.min(zoom + 0.2, maxZoom);
+  }
+
+  return zoom;
 }
 
 // fallback if area not provided in geojson
@@ -144,7 +147,7 @@ function estimateFeatureArea(feature: any): number {
   };
   if (feature.geometry.type === "Polygon") process(coords[0]);
   else if (feature.geometry.type === "MultiPolygon") coords.forEach((p: any) => process(p[0]));
-  return Math.abs(total) / 2; // rough planar area
+  return Math.abs(total) / 2;
 }
 
 useEffect(() => {
@@ -173,10 +176,6 @@ useEffect(() => {
   })();
 }, [focusName, controlsRef, camera]);
 
-
-
-  // animate: spherical slerp along the orbit; optional idle Y-spin
-// animate: spherical slerp along the orbit; optional idle Y-spin
 useFrame((_, delta) => {
   // Only fetch zoom level once per country change
   if (t.current < 1 && focusName && targetRadiusRef.current === null) {

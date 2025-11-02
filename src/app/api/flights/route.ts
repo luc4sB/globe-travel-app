@@ -1,35 +1,79 @@
 import { NextResponse } from "next/server";
-// @ts-expect-error - amadeus SDK has no type declarations
-import Amadeus from "amadeus";
 
-const amadeus = new Amadeus({
-  clientId: process.env.AMADEUS_CLIENT_ID!,
-  clientSecret: process.env.AMADEUS_CLIENT_SECRET!,
-});
+const SERPAPI_KEY = process.env.SERPAPI_KEY!;
 
 export async function POST(req: Request) {
   try {
-    const { origin, destination, departureDate } = await req.json();
+    const {
+      origin,
+      destination,
+      departureDate,
+      returnDate,
+      currency,
+      tripType,
+    } = await req.json();
 
     if (!origin || !destination || !departureDate) {
       return NextResponse.json(
-        { error: "Missing parameters" },
-        { status: 400 },
+        { error: "Missing parameters: origin, destination, or departureDate" },
+        { status: 400 }
       );
     }
 
-    const response = await amadeus.shopping.flightOffersSearch.get({
-      originLocationCode: origin,
-      destinationLocationCode: destination,
-      departureDate, // ✅ use the variable from the JSON body
-      adults: "1",
-      max: "5",
+    const params = new URLSearchParams({
+      engine: "google_flights",
+      api_key: SERPAPI_KEY,
+      departure_id: origin.toUpperCase(),
+      arrival_id: destination.toUpperCase(),
+      outbound_date: departureDate,
+      currency: currency || "GBP",
+      hl: "en",
+      flexible_date: "true",
     });
 
-    const flights = JSON.parse(response.body).data;
-    return NextResponse.json({ flights });
+    // Trip type: 1 = round trip, 2 = one way
+    params.set("type", tripType === "return" ? "1" : "2");
+
+    if (tripType === "return" && returnDate) {
+      params.set("return_date", returnDate);
+    }
+
+    const url = `https://serpapi.com/search?${params.toString()}`;
+    console.log("🛫 SerpApi URL:", url);
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!res.ok) {
+      const message = data.error || "SerpApi error";
+      throw new Error(message);
+    }
+
+    const flights = [
+      ...(data.best_flights || []),
+      ...(data.other_flights || []),
+    ].map((f: any) => ({
+      price: f.price || "—",
+      airline: f.flights?.[0]?.airline || "Unknown",
+      flight_number: f.flights?.[0]?.number || "",
+      duration: f.total_duration || "",
+      segments: f.flights || [],
+      link: f.booking_token || null,
+    }));
+
+    return NextResponse.json({
+      flights,
+      meta: {
+        origin,
+        destination,
+        departureDate,
+        returnDate: returnDate || null,
+        tripType,
+        flexible: true,
+      },
+    });
   } catch (err: any) {
-    console.error("Amadeus error:", err);
+    console.error("SerpApi Flights API error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
