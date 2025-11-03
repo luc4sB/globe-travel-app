@@ -7,20 +7,10 @@ import ThemeToggle from "./components/themeToggle";
 import Background from "./components/Background";
 import SearchBar from "./components/SearchBar";
 import LogoIntro from "./components/LogoIntro";
+import FlightSearchPanel from "./components/FlightSearchPanel";
 import { useState } from "react";
 
-const themeInit = `
-(function() {
-  try {
-    var saved = localStorage.getItem('theme');
-    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    var theme = saved || (prefersDark ? 'dark' : 'light');
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-  } catch (e) {}
-})();
-`;
-
-function Navbar() {
+function Navbar({ onFlightsClick }: { onFlightsClick: () => void }) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
@@ -45,24 +35,21 @@ function Navbar() {
       ${isDark ? "text-gray-100" : "text-slate-800"}`}
     >
       {/* Left: Logo */}
-<div className="flex items-center select-none">
-  <img
-    src="/logo.png"
-    alt="Orbital Logo"
-    className="w-[2.6rem] h-[2.6rem] object-contain mr-[2px]"
-  />
-  <h1
-    className={`text-[1.25rem] font-semibold tracking-tight leading-none ${
-      isDark ? "text-white" : "text-white"
-    }`}
-    style={{ marginLeft: "-15%" }}
-  >
-    rbital
-  </h1>
-</div>
-
-
-
+      <div className="flex items-center select-none">
+        <img
+          src="/logo.png"
+          alt="Orbital Logo"
+          className="w-[2.6rem] h-[2.6rem] object-contain mr-[2px]"
+        />
+        <h1
+          className={`text-[1.25rem] font-semibold tracking-tight leading-none ${
+            isDark ? "text-white" : "text-white"
+          }`}
+          style={{ marginLeft: "-15%" }}
+        >
+          rbital
+        </h1>
+      </div>
 
       {/* Center: Search */}
       <div className="flex-1 flex justify-center">
@@ -76,7 +63,10 @@ function Navbar() {
         <button className="hidden sm:inline text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-sky-400 transition-colors">
           Explore
         </button>
-        <button className="hidden sm:inline text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-sky-400 transition-colors">
+        <button
+          onClick={onFlightsClick}
+          className="hidden sm:inline text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-sky-400 transition-colors"
+        >
           Flights
         </button>
         <ThemeToggle />
@@ -86,7 +76,7 @@ function Navbar() {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-const [showIntro, setShowIntro] = useState(true);
+  const [showFlights, setShowFlights] = useState(false);
 
   return (
     <html lang="en" className="!scroll-smooth" suppressHydrationWarning>
@@ -95,8 +85,11 @@ const [showIntro, setShowIntro] = useState(true);
       >
         <ThemeProvider>
           <Background />
-          <Navbar />
+          <Navbar onFlightsClick={() => setShowFlights(true)} />
           {children}
+          {showFlights && (
+            <FlightSearchPanel onClose={() => setShowFlights(false)} />
+          )}
           <LogoIntro />
         </ThemeProvider>
       </body>

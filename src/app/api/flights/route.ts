@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     }
 
     const url = `https://serpapi.com/search?${params.toString()}`;
-    console.log("🛫 SerpApi URL:", url);
+    console.log("SerpApi URL:", url);
 
     const res = await fetch(url);
     const data = await res.json();
@@ -48,17 +48,24 @@ export async function POST(req: Request) {
       const message = data.error || "SerpApi error";
       throw new Error(message);
     }
-
-    const flights = [
+    const allFlights = [
       ...(data.best_flights || []),
       ...(data.other_flights || []),
-    ].map((f: any) => ({
-      price: f.price || "—",
-      airline: f.flights?.[0]?.airline || "Unknown",
-      flight_number: f.flights?.[0]?.number || "",
-      duration: f.total_duration || "",
-      segments: f.flights || [],
-      link: f.booking_token || null,
+    ];
+    const flights = allFlights.map((f: any) => ({
+      airline: f.flights?.[0]?.airline || "Unknown Airline",
+      flight_number: f.flights?.[0]?.flight_number || "",
+      duration: f.total_duration ? `${f.total_duration} min` : "Unknown",
+      price: f.price ? `${f.price}` : "—",
+      segments: (f.flights || []).map((seg: any) => ({
+        airline: seg.airline,
+        number: seg.flight_number,
+        departure_airport: seg.departure_airport?.id,
+        arrival_airport: seg.arrival_airport?.id,
+        duration: seg.duration ? `${seg.duration} min` : "",
+      })),
+      link: data.search_metadata?.google_flights_url || null,
+      logo: f.airline_logo || null,
     }));
 
     return NextResponse.json({
@@ -69,11 +76,11 @@ export async function POST(req: Request) {
         departureDate,
         returnDate: returnDate || null,
         tripType,
-        flexible: true,
+        total: flights.length,
       },
     });
   } catch (err: any) {
-    console.error("SerpApi Flights API error:", err);
+    console.error("❌ SerpApi Flights API error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

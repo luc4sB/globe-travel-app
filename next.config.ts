@@ -8,7 +8,6 @@ const nextConfig: NextConfig = {
         hostname: "images.pexels.com",
         pathname: "/**",
       },
-      // Optional: future-proof for other providers
       {
         protocol: "https",
         hostname: "images.unsplash.com",
@@ -24,8 +23,15 @@ const nextConfig: NextConfig = {
         hostname: "firebasestorage.googleapis.com",
         pathname: "/**",
       },
+      {
+        protocol: "https",
+        hostname: "content.airhex.com",
+        pathname: "/**",
+      },
     ],
   },
 };
+
+module.exports = nextConfig;
 
 export default nextConfig;

@@ -321,7 +321,7 @@ useEffect(() => {
   return (
     <div className="relative flex items-center justify-center w-full h-screen overflow-hidden">
 <Canvas
-  camera={{ position: [35, 30, 3.2], fov: 45 }}
+  camera={{ position: [35, 30, 4], fov: 45 }}
   gl={{ alpha: true, antialias: true }}
   performance={{ min: 0.3 }}
   onCreated={({ camera }) => {
@@ -351,7 +351,7 @@ useEffect(() => {
     enablePan={false}
     enableZoom
     minDistance={1.8}
-    maxDistance={3.2}
+    maxDistance={4}
     zoomSpeed={0.4}
     rotateSpeed={0.6}
     onStart={handleUserInteractionStart}
