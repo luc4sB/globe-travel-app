@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
-import { X, Loader2 } from "lucide-react";
+import { X, Loader2, Plane, Bed } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 type Airport = {
@@ -27,18 +27,30 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
   const [mainImage, setMainImage] = useState<string | null>(preloadedImages?.[0] ?? defaultImages[0]);
   const [loading, setLoading] = useState(false);
 
-  const [airports, setAirports] = useState<Airport[]>([]);
-  const [filteredOptions, setFilteredOptions] = useState<Airport[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
+  const router = useRouter();
 
+  //Airports
+  const [airports, setAirports] = useState<Airport[]>([]);
+  const [filteredAirports, setFilteredAirports] = useState<Airport[]>([]);
+  const [showAirportDropdown, setShowAirportDropdown] = useState(false);
+
+  //Cities
+  const [cities, setCities] = useState<string[]>([]);
+  const [filteredCities, setFilteredCities] = useState<string[]>([]);
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const [selectedCity, setSelectedCity] = useState("");
+
+  //Form state
   const [tripType, setTripType] = useState<"oneway" | "return">("oneway");
   const [departAirport, setDepartAirport] = useState("");
   const [departDate, setDepartDate] = useState("");
   const [returnDate, setReturnDate] = useState("");
+  const [mode, setMode] = useState<"flights" | "hotels">("flights");
+  const [checkIn, setCheckIn] = useState("");
+  const [checkOut, setCheckOut] = useState("");
+  const [guests, setGuests] = useState(2);
 
-  const router = useRouter();
-
-  // Load airports from local JSON
+  //Load airports + cities
   useEffect(() => {
     fetch("/data/airports.json")
       .then((res) => res.json())
@@ -46,7 +58,15 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
       .catch(() => setAirports([]));
   }, []);
 
-  // Load and cache images for selected country
+  useEffect(() => {
+    if (!selected) return;
+    fetch(`/api/cities?country=${encodeURIComponent(selected)}`)
+      .then((res) => res.json())
+      .then((data) => setCities(data.cities || []))
+      .catch(() => setCities([]));
+  }, [selected]);
+
+  //Country images
   useEffect(() => {
     if (!selected) return;
     setLoading(true);
@@ -83,11 +103,11 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
       .finally(() => setLoading(false));
   }, [selected]);
 
-  // Filter airports by user input
+  //Airport filtering
   const handleAirportSearch = (value: string) => {
     setDepartAirport(value);
     if (!value.trim()) {
-      setFilteredOptions([]);
+      setFilteredAirports([]);
       return;
     }
     const filtered = airports.filter(
@@ -96,19 +116,22 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
         a.city.toLowerCase().includes(value.toLowerCase()) ||
         a.iata_code.toLowerCase().includes(value.toLowerCase())
     );
-    setFilteredOptions(filtered.slice(0, 8));
+    setFilteredAirports(filtered.slice(0, 8));
   };
 
-  const handleDateChange = (type: "depart" | "return", value: string) => {
-    if (type === "depart") {
-      setDepartDate(value);
-      if (returnDate && value > returnDate) setReturnDate("");
-    } else {
-      if (!departDate || value >= departDate) setReturnDate(value);
+  // 🏙️ City filtering
+  const handleCitySearch = (value: string) => {
+    setSelectedCity(value);
+    if (!value.trim()) {
+      setFilteredCities([]);
+      return;
     }
+    const filtered = cities.filter((c) => c.toLowerCase().includes(value.toLowerCase()));
+    setFilteredCities(filtered.slice(0, 8));
   };
 
-  const handleContinue = () => {
+  //Continue buttons
+  const handleContinueFlights = () => {
     const selectedAirport = airports.find(
       (a) =>
         a.iata_code.toLowerCase() === departAirport.toLowerCase() ||
@@ -117,15 +140,13 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
     );
 
     if (!selectedAirport) {
-      alert("Please select a valid departure airport from the list.");
+      alert("Please select a valid departure airport.");
       return;
     }
-
     if (!departDate) {
       alert("Please select a departure date.");
       return;
     }
-
     if (tripType === "return" && !returnDate) {
       alert("Please select a valid return date.");
       return;
@@ -137,15 +158,32 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
       departDate,
       ...(tripType === "return" && { returnDate }),
     });
-
     router.push(`/airports/${encodeURIComponent(selected!)}?${params}`);
+  };
+
+  const handleContinueHotels = () => {
+    if (!selectedCity) {
+      alert("Please select a city.");
+      return;
+    }
+    if (!checkIn || !checkOut) {
+      alert("Please select valid check-in and check-out dates.");
+      return;
+    }
+    const params = new URLSearchParams({
+      country: selected!,
+      city: selectedCity,
+      checkIn,
+      checkOut,
+      guests: guests.toString(),
+    });
+    router.push(`/hotels/results?${params}`);
   };
 
   return (
     <AnimatePresence>
       {selected && (
         <>
-          {/* Overlay for mobile */}
           <motion.div
             className="fixed inset-0 bg-black/30 backdrop-blur-sm md:hidden z-40"
             initial={{ opacity: 0 }}
@@ -154,20 +192,15 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
             onClick={onClose}
           />
 
-          {/* Glass Panel */}
           <motion.div
             key={selected}
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 90, damping: 14 }}
-            className="fixed right-0 top-0 z-50 h-full w-full sm:w-[440px]
-                       backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40
-                       dark:from-zinc-900/70 dark:to-black/60 border-l border-white/10
-                       shadow-[0_0_40px_rgba(0,0,0,0.4)] overflow-y-auto"
+            className="fixed right-0 top-0 z-50 h-full w-full sm:w-[440px] backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40 dark:from-zinc-900/70 dark:to-black/60 border-l border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.4)] overflow-y-auto"
           >
             <div className="relative h-full flex flex-col">
-              {/* Close button */}
               <button
                 onClick={onClose}
                 className="absolute top-4 right-4 p-2 rounded-full bg-white/20 dark:bg-zinc-800/60 hover:bg-white/30 transition z-10"
@@ -199,123 +232,185 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                 </h2>
               </div>
 
-              {/* Thumbnail gallery */}
-              {images.length > 1 && (
-                <div className="p-4 flex gap-4 overflow-x-auto snap-x snap-mandatory scrollbar-hide">
-                  {images.map((src, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setMainImage(src)}
-                      className="relative flex-shrink-0 w-[220px] aspect-[16/9] rounded-xl overflow-hidden snap-start"
-                    >
-                      <Image
-                        src={src}
-                        alt={`${selected} view ${i + 1}`}
-                        fill
-                        loading="lazy"
-                        className={`object-cover shadow-sm transition-all duration-200 ${
-                          mainImage === src
-                            ? "ring-4 ring-sky-500 scale-[1.02]"
-                            : "hover:opacity-90"
-                        }`}
-                      />
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Trip Planner */}
+              {/* Main content */}
               <div className="p-6 space-y-5">
-                {/* Trip Type */}
-                <div className="flex justify-center gap-3">
+                {/* Mode toggle */}
+                <div className="flex justify-center gap-3 mb-3">
                   <button
-                    onClick={() => setTripType("oneway")}
-                    className={`px-5 py-1.5 rounded-full text-sm font-medium transition ${
-                      tripType === "oneway"
-                        ? "bg-sky-500 text-white shadow-md"
+                    onClick={() => setMode("flights")}
+                    className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                      mode === "flights"
+                        ? "bg-sky-600 text-white shadow-md scale-[1.05]"
                         : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
                     }`}
                   >
-                    One Way
+                    <Plane size={14} /> Flights
                   </button>
                   <button
-                    onClick={() => setTripType("return")}
-                    className={`px-5 py-1.5 rounded-full text-sm font-medium transition ${
-                      tripType === "return"
-                        ? "bg-sky-500 text-white shadow-md"
-                        : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
+                    onClick={() => setMode("hotels")}
+                    className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                      mode === "hotels"
+                        ? "bg-pink-600 text-white shadow-md scale-[1.05]"
+                        : "bg-transparent border border-pink-400/50 text-pink-400 hover:bg-pink-500/10"
                     }`}
                   >
-                    Return
+                    <Bed size={14} /> Hotels
                   </button>
                 </div>
 
-                {/* Airport Search */}
-                <div className="relative">
-                  <label className="text-xs text-gray-300 mb-1 block">Departure Airport</label>
-                  <div className="glass flex items-center px-4 py-2 rounded-2xl shadow-md focus-within:ring-2 focus-within:ring-sky-400 transition-all">
-                    <input
-                      type="text"
-                      placeholder="Search airport or code..."
-                      value={departAirport}
-                      onChange={(e) => handleAirportSearch(e.target.value)}
-                      onFocus={() => setShowDropdown(true)}
-                      onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-                      className="w-full bg-transparent text-gray-100 placeholder-gray-400 focus:outline-none text-sm"
-                    />
-                  </div>
+                {mode === "flights" && (
+                  <>
+                    <div className="relative">
+                      <label className="text-xs text-gray-300 mb-1 block">Departure Airport</label>
+                      <div className="glass flex items-center px-4 py-2 rounded-2xl shadow-md focus-within:ring-2 focus-within:ring-sky-400 transition-all">
+                        <input
+                          type="text"
+                          placeholder="Search airport..."
+                          value={departAirport}
+                          onChange={(e) => handleAirportSearch(e.target.value)}
+                          onFocus={() => setShowAirportDropdown(true)}
+                          onBlur={() => setTimeout(() => setShowAirportDropdown(false), 200)}
+                          className="w-full bg-transparent text-gray-100 placeholder-gray-400 focus:outline-none text-sm"
+                        />
+                      </div>
 
-                  {showDropdown && filteredOptions.length > 0 && (
-                    <ul className="absolute left-0 right-0 mt-2 glass rounded-xl shadow-lg overflow-hidden z-[9999] max-h-56 overflow-y-auto backdrop-blur-lg scrollbar-hide">
-                      {filteredOptions.map((a) => (
-                        <li
-                          key={a.iata_code}
-                          onClick={() => {
-                            setDepartAirport(`${a.city} (${a.iata_code})`);
-                            setShowDropdown(false);
-                          }}
-                          className="px-4 py-2 cursor-pointer hover:bg-sky-100/70 dark:hover:bg-zinc-700/70 transition text-sm text-gray-800 dark:text-gray-100 flex justify-between"
-                        >
-                          <span>{a.city} — {a.name}</span>
-                          <span className="text-xs text-sky-400 font-mono">{a.iata_code}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                {/* Dates */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-gray-300 mb-1 block">Departure Date</label>
-                    <input
-                      type="date"
-                      value={departDate}
-                      onChange={(e) => handleDateChange("depart", e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-white/10 dark:bg-zinc-900/40 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none"
-                    />
-                  </div>
-
-                  {tripType === "return" && (
-                    <div>
-                      <label className="text-xs text-gray-300 mb-1 block">Return Date</label>
-                      <input
-                        type="date"
-                        value={returnDate}
-                        onChange={(e) => handleDateChange("return", e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg bg-white/10 dark:bg-zinc-900/40 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none"
-                      />
+                      {showAirportDropdown && filteredAirports.length > 0 && (
+                        <ul className="absolute left-0 right-0 mt-2 glass rounded-xl shadow-lg overflow-hidden z-[9999] max-h-56 overflow-y-auto backdrop-blur-lg scrollbar-hide">
+                          {filteredAirports.map((a) => (
+                            <li
+                              key={a.iata_code}
+                              onClick={() => {
+                                setDepartAirport(`${a.city} (${a.iata_code})`);
+                                setShowAirportDropdown(false);
+                              }}
+                              className="px-4 py-2 cursor-pointer hover:bg-sky-100/70 dark:hover:bg-zinc-700/70 transition text-sm text-gray-800 dark:text-gray-100 flex justify-between"
+                            >
+                              <span>{a.city} — {a.name}</span>
+                              <span className="text-xs text-sky-400 font-mono">{a.iata_code}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                {/* Continue button */}
-                <button
-                  onClick={handleContinue}
-                  className="w-full bg-sky-500 hover:bg-sky-600 text-white rounded-xl py-3 font-semibold transition-all shadow-md hover:shadow-lg mt-2"
-                >
-                  View Airports in {selected}
-                </button>
+                    {/* Dates */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-gray-300 mb-1 block">Departure Date</label>
+                        <input
+                          type="date"
+                          value={departDate}
+                          onChange={(e) => setDepartDate(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none"
+                        />
+                      </div>
+                      {tripType === "return" && (
+                        <div>
+                          <label className="text-xs text-gray-300 mb-1 block">Return Date</label>
+                          <input
+                            type="date"
+                            value={returnDate}
+                            onChange={(e) => setReturnDate(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={handleContinueFlights}
+                      className="w-full bg-sky-500 hover:bg-sky-600 text-white rounded-xl py-3 font-semibold transition-all shadow-md hover:shadow-lg mt-2"
+                    >
+                      View Airports in {selected}
+                    </button>
+                  </>
+                )}
+
+                {mode === "hotels" && (
+                  <>
+                    <div className="relative">
+                      <label className="text-xs text-gray-300 mb-1 block">City</label>
+                      <div className="glass flex items-center px-4 py-2 rounded-2xl shadow-md focus-within:ring-2 focus-within:ring-pink-400 transition-all">
+                        <input
+                          type="text"
+                          placeholder="Search city..."
+                          value={selectedCity}
+                          onChange={(e) => handleCitySearch(e.target.value)}
+                          onFocus={() => setShowCityDropdown(true)}
+                          onBlur={() => setTimeout(() => setShowCityDropdown(false), 200)}
+                          className="w-full bg-transparent text-gray-100 placeholder-gray-400 focus:outline-none text-sm"
+                        />
+                      </div>
+
+                      {showCityDropdown && filteredCities.length > 0 && (
+                        <ul className="absolute left-0 right-0 mt-2 glass rounded-xl shadow-lg overflow-hidden z-[9999] max-h-56 overflow-y-auto backdrop-blur-lg scrollbar-hide">
+                          {filteredCities.map((city) => (
+                            <li
+                              key={city}
+                              onClick={() => {
+                                setSelectedCity(city);
+                                setShowCityDropdown(false);
+                              }}
+                              className="px-4 py-2 cursor-pointer hover:bg-pink-100/70 dark:hover:bg-zinc-700/70 transition text-sm text-gray-800 dark:text-gray-100"
+                            >
+                              {city}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    {/* Dates + guests */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-gray-300 mb-1 block">Check-in</label>
+                        <input
+                          type="date"
+                          value={checkIn}
+                          onChange={(e) => setCheckIn(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-pink-400 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-300 mb-1 block">Check-out</label>
+                        <input
+                          type="date"
+                          value={checkOut}
+                          onChange={(e) => setCheckOut(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-pink-400 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-gray-300 mb-1 block">Guests</label>
+                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30">
+                        <button
+                          type="button"
+                          onClick={() => setGuests(Math.max(1, guests - 1))}
+                          className="px-3 py-1 text-gray-300 hover:text-white text-lg"
+                        >
+                          −
+                        </button>
+                        <span className="text-gray-100 font-semibold">{guests}</span>
+                        <button
+                          type="button"
+                          onClick={() => setGuests(guests + 1)}
+                          className="px-3 py-1 text-gray-300 hover:text-white text-lg"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleContinueHotels}
+                      className="w-full bg-pink-500 hover:bg-pink-600 text-white rounded-xl py-3 font-semibold transition-all shadow-md hover:shadow-lg mt-2"
+                    >
+                      Find Hotels in {selected}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </motion.div>
