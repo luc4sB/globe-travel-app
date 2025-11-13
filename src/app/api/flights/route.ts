@@ -2,6 +2,41 @@ import { NextResponse } from "next/server";
 
 const SERPAPI_KEY = process.env.SERPAPI_KEY!;
 
+/* ------------------------- PRICE NORMALISER ------------------------- */
+function normalizePrice(p: any): string | null {
+  if (!p) return null;
+
+  if (typeof p === "string") {
+    const num = p.replace(/[^\d]/g, "");
+    return num ? `£${num}` : null;
+  }
+
+  if (typeof p === "number") {
+    return `£${p}`;
+  }
+
+  if (typeof p === "object") {
+    if (p.formatted) return p.formatted;        
+    if (p.raw) return `£${p.raw}`;              
+    if (p.amount) return `£${p.amount}`;
+    if (p.rounded_price) return `£${p.rounded_price}`;
+  }
+
+  return null;
+}
+
+/* ------------------------- DURATION HELPERS ------------------------- */
+function minutesToHM(minutes: number | null): string {
+  if (!minutes || isNaN(minutes)) return "Unknown";
+
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+
+  if (!h) return `${m}m`;
+  if (!m) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 export async function POST(req: Request) {
   try {
     const {
@@ -20,6 +55,7 @@ export async function POST(req: Request) {
       );
     }
 
+    /* ---------------------- Build Request ---------------------- */
     const params = new URLSearchParams({
       engine: "google_flights",
       api_key: SERPAPI_KEY,
@@ -31,9 +67,7 @@ export async function POST(req: Request) {
       flexible_date: "true",
     });
 
-    // Trip type: 1 = round trip, 2 = one way
     params.set("type", tripType === "return" ? "1" : "2");
-
     if (tripType === "return" && returnDate) {
       params.set("return_date", returnDate);
     }
@@ -45,28 +79,48 @@ export async function POST(req: Request) {
     const data = await res.json();
 
     if (!res.ok) {
-      const message = data.error || "SerpApi error";
-      throw new Error(message);
+      throw new Error(data.error || "SerpApi error");
     }
+
+    /* ---------------------------- Extract Flights ---------------------------- */
     const allFlights = [
       ...(data.best_flights || []),
       ...(data.other_flights || []),
     ];
-    const flights = allFlights.map((f: any) => ({
-      airline: f.flights?.[0]?.airline || "Unknown Airline",
-      flight_number: f.flights?.[0]?.flight_number || "",
-      duration: f.total_duration ? `${f.total_duration} min` : "Unknown",
-      price: f.price ? `${f.price}` : "—",
-      segments: (f.flights || []).map((seg: any) => ({
-        airline: seg.airline,
-        number: seg.flight_number,
-        departure_airport: seg.departure_airport?.id,
-        arrival_airport: seg.arrival_airport?.id,
-        duration: seg.duration ? `${seg.duration} min` : "",
-      })),
-      link: data.search_metadata?.google_flights_url || null,
-      logo: f.airline_logo || null,
-    }));
+
+    const flights = allFlights.map((f: any) => {
+      const priceStr = normalizePrice(f.price);
+
+      const totalMinutes = f.total_duration ?? null;
+
+      return {
+        airline: f.flights?.[0]?.airline || "Unknown Airline",
+        flight_number: f.flights?.[0]?.flight_number || "",
+
+        /* Duration fields */
+        duration_hm: minutesToHM(totalMinutes),
+        duration_min: totalMinutes ?? Infinity,
+
+        /* Price fields */
+        price: priceStr ?? "Price unavailable",
+        price_value: priceStr
+          ? parseInt(priceStr.replace(/[^\d]/g, ""), 10)
+          : Infinity,
+
+        /* Segments */
+        segments: (f.flights || []).map((seg: any) => ({
+          airline: seg.airline,
+          number: seg.flight_number,
+          departure_airport: seg.departure_airport?.id,
+          arrival_airport: seg.arrival_airport?.id,
+
+          duration_hm: seg.duration ? minutesToHM(seg.duration) : "",
+          duration_min: seg.duration ?? Infinity,
+        })),
+
+        link: data.search_metadata?.google_flights_url || null,
+      };
+    });
 
     return NextResponse.json({
       flights,
@@ -80,7 +134,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (err: any) {
-    console.error("❌ SerpApi Flights API error:", err);
+    console.error("SerpApi Flights API error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

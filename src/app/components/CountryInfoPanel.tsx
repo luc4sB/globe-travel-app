@@ -119,7 +119,15 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
     setFilteredAirports(filtered.slice(0, 8));
   };
 
-  // 🏙️ City filtering
+    const handleDateChange = (type: "depart" | "return", value: string) => {
+    if (type === "depart") {
+      setDepartDate(value);
+      if (returnDate && value > returnDate) setReturnDate("");
+    } else {
+      if (!departDate || value >= departDate) setReturnDate(value);
+    }
+  };
+
   const handleCitySearch = (value: string) => {
     setSelectedCity(value);
     if (!value.trim()) {
@@ -231,6 +239,31 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                   {selected}
                 </h2>
               </div>
+              {/* Thumbnails */}
+              {images.length > 1 && (
+                <div className="p-4 flex gap-4 overflow-x-auto snap-x snap-mandatory scrollbar-hide">
+                  {images.map((src, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setMainImage(src)}
+                      className="relative flex-shrink-0 w-[220px] aspect-[16/9] rounded-xl overflow-hidden snap-start"
+                    >
+                      <Image
+                        src={src}
+                        alt={`${selected} view ${i + 1}`}
+                        fill
+                        loading="lazy"
+                        className={`object-cover shadow-sm transition-all duration-200 ${
+                          mainImage === src
+                            ? "ring-4 ring-sky-500 scale-[1.02]"
+                            : "hover:opacity-90"
+                        }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+
 
               {/* Main content */}
               <div className="p-6 space-y-5">
@@ -260,6 +293,32 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
 
                 {mode === "flights" && (
                   <>
+                     {/* Trip Type */}
+      <div className="flex justify-center gap-3 mb-3">
+        <button
+          type="button"
+          onClick={() => setTripType("oneway")}
+          className={`px-5 py-1.5 rounded-full text-sm font-medium transition ${
+            tripType === "oneway"
+              ? "bg-sky-500 text-white shadow-md"
+              : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
+          }`}
+        >
+          One Way
+        </button>
+        <button
+          type="button"
+          onClick={() => setTripType("return")}
+          className={`px-5 py-1.5 rounded-full text-sm font-medium transition ${
+            tripType === "return"
+              ? "bg-sky-500 text-white shadow-md"
+              : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
+          }`}
+        >
+          Return
+        </button>
+      </div>
+
                     <div className="relative">
                       <label className="text-xs text-gray-300 mb-1 block">Departure Airport</label>
                       <div className="glass flex items-center px-4 py-2 rounded-2xl shadow-md focus-within:ring-2 focus-within:ring-sky-400 transition-all">
