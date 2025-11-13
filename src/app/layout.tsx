@@ -12,8 +12,12 @@ import HotelsSearch from "./components/HotelsSearch";
 import { useState, createContext } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Globe, SlidersHorizontal } from "lucide-react";
+import { AuthProvider, useAuth } from "./components/AuthProvider";
+import { signOut } from "firebase/auth";
+import { auth } from "./lib/firebase";
+import AuthModal from "./components/AuthModal";
 
-//Share filter state between navbar and HotelResults
+// Share filter state between navbar and HotelResults
 export const FilterContext = createContext<{
   showFilters: boolean;
   toggleFilters: () => void;
@@ -23,12 +27,17 @@ function Navbar({
   onFlightsClick,
   onHotelsClick,
   onToggleFilters,
+  onLoginClick,
+  onSignupClick,
 }: {
   onFlightsClick: () => void;
   onHotelsClick: () => void;
   onToggleFilters: () => void;
+  onLoginClick: () => void;
+  onSignupClick: () => void;
 }) {
   const { theme } = useTheme();
+  const { user, loading } = useAuth();
   const isDark = theme === "dark";
   const pathname = usePathname();
   const router = useRouter();
@@ -38,6 +47,15 @@ function Navbar({
   const city = sp.get("city") || "";
   const checkIn = sp.get("checkIn") || "";
   const checkOut = sp.get("checkOut") || "";
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.push("/");
+    } catch (err) {
+      console.error("Error signing out", err);
+    }
+  };
 
   return (
     <nav
@@ -61,7 +79,6 @@ function Navbar({
     >
       {/* LEFT SECTION */}
       <div className="flex items-center gap-4 select-none">
-        {/* Orbital logo */}
         <div
           className="flex items-center cursor-pointer"
           onClick={() => router.push("/")}
@@ -136,6 +153,38 @@ function Navbar({
           </>
         )}
 
+        {/* Auth controls */}
+        {!loading && (
+          <>
+            {user ? (
+              <div className="flex items-center gap-2">
+                
+                <button
+                  onClick={handleLogout}
+                  className="text-xs sm:text-sm font-medium px-3 py-1 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-md shadow-sky-500/30 transition-colors"
+                >
+                  Log out
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onLoginClick}
+                  className="text-xs sm:text-sm font-medium px-3 py-1 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-md shadow-sky-500/30 transition-colors"
+                >
+                  Log in
+                </button>
+                <button
+                  onClick={onSignupClick}
+                  className="hidden sm:inline text-xs sm:text-sm font-medium px-3 py-1 rounded-full bg-pink-500 hover:bg-pink-600 text-white shadow-md shadow-pink-500/30 transition-colors"
+                >
+                  Sign up
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
         <ThemeToggle />
       </div>
     </nav>
@@ -150,38 +199,61 @@ export default function RootLayout({
   const [showFlights, setShowFlights] = useState(false);
   const [showHotels, setShowHotels] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
 
   return (
     <html lang="en" className="!scroll-smooth" suppressHydrationWarning>
       <body
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased overflow-hidden`}
       >
-        <ThemeProvider>
-          <Background />
+        <AuthProvider>
+          <ThemeProvider>
+            <Background />
 
-          <FilterContext.Provider
-            value={{
-              showFilters,
-              toggleFilters: () => setShowFilters((p) => !p),
-            }}
-          >
-            <Navbar
-              onFlightsClick={() => setShowFlights(true)}
-              onHotelsClick={() => setShowHotels(true)}
-              onToggleFilters={() => setShowFilters((p) => !p)}
+            <FilterContext.Provider
+              value={{
+                showFilters,
+                toggleFilters: () => setShowFilters((p) => !p),
+              }}
+            >
+              <Navbar
+                onFlightsClick={() => setShowFlights(true)}
+                onHotelsClick={() => setShowHotels(true)}
+                onToggleFilters={() => setShowFilters((p) => !p)}
+                onLoginClick={() => {
+                  setAuthMode("login");
+                  setAuthModalOpen(true);
+                }}
+                onSignupClick={() => {
+                  setAuthMode("signup");
+                  setAuthModalOpen(true);
+                }}
+              />
+
+              {children}
+            </FilterContext.Provider>
+
+            {/* Panels */}
+            {showFlights && (
+              <FlightSearchPanel onClose={() => setShowFlights(false)} />
+            )}
+            <HotelsSearch
+              open={showHotels}
+              onClose={() => setShowHotels(false)}
             />
 
-            {children}
-          </FilterContext.Provider>
+            {/* Auth modal over globe */}
+            <AuthModal
+              open={authModalOpen}
+              mode={authMode}
+              onClose={() => setAuthModalOpen(false)}
+              onSwitchMode={(m) => setAuthMode(m)}
+            />
 
-          {/* Panels */}
-          {showFlights && (
-            <FlightSearchPanel onClose={() => setShowFlights(false)} />
-          )}
-          <HotelsSearch open={showHotels} onClose={() => setShowHotels(false)} />
-
-          <LogoIntro />
-        </ThemeProvider>
+            <LogoIntro />
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   );
