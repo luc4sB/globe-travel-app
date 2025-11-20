@@ -13,6 +13,7 @@ import CountryLabels from "./CountryLabels";
 import { useCountryClick } from "../hooks/CountryClick";
 import CountryInfoPanel from "./CountryInfoPanel";
 import * as THREE from "three";
+import SocialPanel from "./SocialPanel";
 
 /** ---------- Earth ---------- */
 function Earth({ isDark }: { isDark: boolean }) {
@@ -282,6 +283,7 @@ export default function Globe() {
   };
 
   const [panelVisible, setPanelVisible] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<"info" | "social">("info");
 async function preloadCountryImages(name: string) {
   if (imageCache.has(name)) {
     setPreloadedImages(imageCache.get(name)!);
@@ -361,13 +363,73 @@ useEffect(() => {
 
 
 {panelVisible && selectedCountry && (
-  <CountryInfoPanel
-    key={selectedCountry.replace(/\s+/g, "-").toLowerCase()}
-    selected={selectedCountry}
-    onClose={() => setSelectedCountry(null)}
-    preloadedImages={preloadedImages}
-  />
+  <>
+    {/* Desktop: both panels visible */}
+    <SocialPanel
+      open={true}
+      selectedCountry={selectedCountry}
+      onClose={() => setSelectedCountry(null)}
+      className="hidden lg:flex lg:flex-col lg:top-24 lg:bottom-6 lg:left-4 lg:w-[360px] lg:max-h-[calc(100vh-7rem)]"
+    />
+
+    <div className="hidden lg:block">
+      <CountryInfoPanel
+        key={selectedCountry.replace(/\s+/g, "-").toLowerCase()}
+        selected={selectedCountry}
+        onClose={() => setSelectedCountry(null)}
+        preloadedImages={preloadedImages}
+      />
+    </div>
+
+    {/* MOBILE: toggle between Info & Social */}
+    <div className="lg:hidden">
+      {mobilePanel === "info" ? (
+        <CountryInfoPanel
+          key={selectedCountry.replace(/\s+/g, "-").toLowerCase()}
+          selected={selectedCountry}
+          onClose={() => setSelectedCountry(null)}
+          preloadedImages={preloadedImages}
+        />
+      ) : (
+        <SocialPanel
+          open={true}
+          selectedCountry={selectedCountry}
+          onClose={() => setSelectedCountry(null)}
+          className="flex flex-col top-[5.5rem] bottom-24 left-0 right-0 mx-3"
+        />
+      )}
+
+      {/* Bottom toggle */}
+      <div className="fixed bottom-4 inset-x-0 flex justify-center z-50">
+        <div className="inline-flex rounded-full bg-slate-900/85 border border-white/15 shadow-lg shadow-black/60 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setMobilePanel("info")}
+            className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
+              mobilePanel === "info"
+                ? "bg-sky-500 text-white"
+                : "text-slate-200 hover:bg-white/5"
+            }`}
+          >
+            Info
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobilePanel("social")}
+            className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
+              mobilePanel === "social"
+                ? "bg-pink-500 text-white"
+                : "text-slate-200 hover:bg-white/5"
+            }`}
+          >
+            Social
+          </button>
+        </div>
+      </div>
+    </div>
+  </>
 )}
+
     </div>
   );
 }
