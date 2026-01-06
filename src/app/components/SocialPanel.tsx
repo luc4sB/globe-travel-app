@@ -1,8 +1,7 @@
-// SocialPanel.tsx
 "use client";
 
-import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
+import { useEffect, useRef, useState } from "react";
+import { collection, getDocs, limit, orderBy, query, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "./AuthProvider";
 
@@ -21,7 +20,7 @@ type SocialPanelProps = {
   selectedCountry: string | null;
   onClose: () => void;
   onCreateTrip?: () => void;
-  className?: string; // <--- NEW
+  className?: string;
 };
 
 function formatDate(ts?: { seconds: number; nanoseconds: number }) {
@@ -44,37 +43,65 @@ export default function SocialPanel({
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const [stableCountry, setStableCountry] = useState<string | null>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const reqIdRef = useRef(0);
+
   useEffect(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+
     if (!open || !selectedCountry) {
+      setStableCountry(null);
+      return;
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      setStableCountry(selectedCountry);
+    }, 250);
+
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, [open, selectedCountry]);
+
+  useEffect(() => {
+    const reqId = ++reqIdRef.current;
+
+    if (!open || !stableCountry) {
       setTrips([]);
+      setLoading(false);
       return;
     }
 
     setLoading(true);
 
-    const q = query(
-      collection(db, "trips"),
-      where("countryCode", "==", selectedCountry),
-      orderBy("createdAt", "desc")
-    );
+    (async () => {
+      try {
+        const q = query(
+          collection(db, "trips"),
+          where("countryCode", "==", stableCountry),
+          orderBy("createdAt", "desc"),
+          limit(50)
+        );
 
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
+        const snap = await getDocs(q);
+        if (reqId !== reqIdRef.current) return;
+
         const data: Trip[] = snap.docs.map((d) => ({
           id: d.id,
           ...(d.data() as any),
         }));
-        setTrips(data);
-        setLoading(false);
-      },
-      () => {
-        setLoading(false);
-      }
-    );
 
-    return () => unsub();
-  }, [open, selectedCountry]);
+        setTrips(data);
+      } catch (e) {
+        if (reqId === reqIdRef.current) setTrips([]);
+        // eslint-disable-next-line no-console
+        console.error(e);
+      } finally {
+        if (reqId === reqIdRef.current) setLoading(false);
+      }
+    })();
+  }, [open, stableCountry]);
 
   if (!selectedCountry) return null;
 
@@ -91,15 +118,10 @@ export default function SocialPanel({
       `}
     >
       <div className="flex-1 rounded-3xl bg-slate-900/95 border border-white/10 shadow-2xl shadow-black/60 overflow-hidden flex flex-col">
-        {/* Header */}
         <div className="px-4 py-3 bg-gradient-to-r from-slate-900 via-slate-900 to-sky-900/60 border-b border-white/10 flex items-center justify-between">
           <div className="flex flex-col gap-0.5">
-            <span className="text-xs uppercase tracking-[0.2em] text-slate-400">
-              COMMUNITY
-            </span>
-            <h2 className="text-sm font-semibold text-white">
-              Trips in {selectedCountry}
-            </h2>
+            <span className="text-xs uppercase tracking-[0.2em] text-slate-400">COMMUNITY</span>
+            <h2 className="text-sm font-semibold text-white">Trips in {selectedCountry}</h2>
           </div>
 
           <button
@@ -110,9 +132,7 @@ export default function SocialPanel({
           </button>
         </div>
 
-        {/* Content */}
         <div className="flex-1 flex flex-col bg-gradient-to-b from-slate-900/80 to-slate-950">
-          {/* CTA */}
           <div className="px-4 pt-3 pb-2 border-b border-white/5">
             {user ? (
               <button
@@ -124,15 +144,11 @@ export default function SocialPanel({
             ) : (
               <p className="text-[11px] text-slate-300">
                 Log in to share your trips in{" "}
-                <span className="font-semibold text-sky-300">
-                  {selectedCountry}
-                </span>
-                .
+                <span className="font-semibold text-sky-300">{selectedCountry}</span>.
               </p>
             )}
           </div>
 
-          {/* Feed */}
           <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
             {loading && (
               <div className="space-y-2">
@@ -158,9 +174,7 @@ export default function SocialPanel({
                 >
                   <header className="flex items-center justify-between gap-2 mb-1">
                     <div className="flex flex-col">
-                      <h3 className="text-xs font-semibold text-white line-clamp-2">
-                        {trip.title}
-                      </h3>
+                      <h3 className="text-xs font-semibold text-white line-clamp-2">{trip.title}</h3>
                       <span className="text-[10px] text-slate-400">
                         {trip.cityName}, {trip.countryCode}
                       </span>
@@ -169,9 +183,7 @@ export default function SocialPanel({
                       {formatDate(trip.createdAt)}
                     </span>
                   </header>
-                  <p className="text-[11px] text-slate-200 line-clamp-4">
-                    {trip.body}
-                  </p>
+                  <p className="text-[11px] text-slate-200 line-clamp-4">{trip.body}</p>
                 </article>
               ))}
           </div>

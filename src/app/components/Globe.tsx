@@ -2,17 +2,14 @@
 
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import {
-  TextureLoader,
-  SRGBColorSpace,
-  Group,
-} from "three";
-import { useEffect, useRef, useState, Suspense } from "react";
+import { TextureLoader, SRGBColorSpace, Group } from "three";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import * as THREE from "three";
+
 import CountryBorders from "./CountryBorders";
 import CountryLabels from "./CountryLabels";
 import { useCountryClick } from "../hooks/CountryClick";
 import CountryInfoPanel from "./CountryInfoPanel";
-import * as THREE from "three";
 import SocialPanel from "./SocialPanel";
 
 /** ---------- Earth ---------- */
@@ -33,56 +30,191 @@ function Earth({ isDark }: { isDark: boolean }) {
         metalness={0}
         emissive={isDark ? "#000000" : "#a3b3ff"}
         emissiveIntensity={isDark ? 0 : 0.045}
-        depthWrite={true}
-        depthTest={true}
+        depthWrite
+        depthTest
       />
     </mesh>
-    
   );
 }
 
+/** ---------- Math helpers ---------- */
+function slerpDir(a: THREE.Vector3, b: THREE.Vector3, t: number) {
+  const v0 = a.clone().normalize();
+  const v1 = b.clone().normalize();
+  const dot = THREE.MathUtils.clamp(v0.dot(v1), -1, 1);
+  const theta = Math.acos(dot);
+  if (theta < 1e-6) return v1.clone();
+
+  const sinTheta = Math.sin(theta);
+  const w0 = Math.sin((1 - t) * theta) / sinTheta;
+  const w1 = Math.sin(t * theta) / sinTheta;
+
+  return v0.multiplyScalar(w0).add(v1.multiplyScalar(w1)).normalize();
+}
+
+
+function hardResetOrbitDeltas(controls: any) {
+  if (!controls) return;
+
+  try {
+    controls.target?.set?.(0, 0, 0);
+
+    if (controls.sphericalDelta?.set) controls.sphericalDelta.set(0, 0, 0);
+    if (controls.panOffset?.set) controls.panOffset.set(0, 0, 0);
+
+    if (typeof controls.zoomChanged === "boolean") controls.zoomChanged = false;
+
+    if (controls._sphericalDelta?.set) controls._sphericalDelta.set(0, 0, 0);
+    if (controls._panOffset?.set) controls._panOffset.set(0, 0, 0);
+
+    controls.update?.();
+  } catch {
+    // safe no-op
+  }
+}
+
+
+function adjustDirToPlaceTargetAtNDC(params: {
+  dir: THREE.Vector3; // front direction
+  camRadius: number; // camera distance from origin
+  targetWorld: THREE.Vector3; // desired center point
+  camera: THREE.PerspectiveCamera;
+  desiredNDC: THREE.Vector2;
+}) {
+  const { dir, camRadius, targetWorld, camera, desiredNDC } = params;
+
+  // Start from base camera position along dir
+  const pos = dir.clone().multiplyScalar(camRadius);
+
+  // Iterative yaw/pitch correction
+  const tmpCam = camera.clone() as THREE.PerspectiveCamera;
+  tmpCam.position.copy(pos);
+  tmpCam.lookAt(0, 0, 0);
+  tmpCam.updateMatrixWorld(true);
+
+  const up = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3();
+
+  const p = targetWorld.clone();
+  const proj = new THREE.Vector3();
+
+  for (let i = 0; i < 10; i++) {
+    tmpCam.updateMatrixWorld(true);
+
+    proj.copy(p).project(tmpCam);
+    const errX = proj.x - desiredNDC.x;
+    const errY = proj.y - desiredNDC.y;
+
+    if (Math.abs(errX) < 0.002 && Math.abs(errY) < 0.002) break;
+
+    right.set(1, 0, 0).applyQuaternion(tmpCam.quaternion);
+
+
+    const yaw = errX * 0.35;   // tweak constants
+    const pitch = -errY * 0.35;
+
+    pos.applyAxisAngle(up, yaw);
+    pos.applyAxisAngle(right, pitch);
+
+    tmpCam.position.copy(pos);
+    tmpCam.lookAt(0, 0, 0);
+  }
+
+  return pos.normalize(); // return adjusted direction
+}
+
+/** ---------- RotatingGroup ---------- */
 function RotatingGroup({
   isDark,
   isRotationEnabled,
   onCountrySelect,
-  focusName,
+  focus,
   controlsRef,
 }: {
   isDark: boolean;
   isRotationEnabled: boolean;
-  onCountrySelect: (name: string) => void;
-  focusName: string | null;
+  onCountrySelect: (name: string, hitPoint: THREE.Vector3) => void;
+  focus: { name: string; nonce: number; hitPoint?: THREE.Vector3 } | null;
   controlsRef: React.RefObject<any>;
 }) {
   const groupRef = useRef<Group>(null);
-  const { camera } = useThree();
+  const bordersGroupRef = useRef<THREE.Group>(null);
+  const { camera, size } = useThree();
+  const focusSeq = useRef(0);
 
-  // cache: country name -> unit vector (from label_x/label_y)
-  const vectorsCache = useRef(new Map<string, THREE.Vector3>());
+// tween state
+const startRadiusRef = useRef(0);
 
-  // tween state
-  const fromDir = useRef(new THREE.Vector3(0, 0, -1));
-  const toDir   = useRef(new THREE.Vector3(0, 0, -1));
-  const t       = useRef(1);
-  const targetRadiusRef = useRef<number | null>(null);
+  const raycaster = useMemo(() => new THREE.Raycaster(), []);
 
 
+  // Clicks provide exact hitPoint
   useCountryClick(onCountrySelect);
 
-  function latLongToVector3(lat: number, lon: number, radius = 1): THREE.Vector3 {
-  const phi = (90 - lat) * (Math.PI / 180);
-  const theta = (lon - 180) * (Math.PI / 180);
+  // tween state
+  const fromDir = useRef(new THREE.Vector3(0, 0, 1));
+  const toDir = useRef(new THREE.Vector3(0, 0, 1));
+  const t = useRef(1);
+  const targetRadiusRef = useRef<number | null>(null);
+  const targetPointRef = useRef<THREE.Vector3 | null>(null);
 
-  const x = radius * Math.sin(phi) * Math.cos(theta);
-  const y = -radius * Math.cos(phi);
-  const z = -radius * Math.sin(phi) * Math.sin(theta);
+  function applyCountryBias(name: string, dir: THREE.Vector3): THREE.Vector3 {
+  const n = name.trim().toLowerCase();
+  const d = dir.clone().normalize();
 
-  return new THREE.Vector3(x, y, z);
+  if (n === "russia") {
+    // Bias towards the west side of Russia.
+    const WEST_BIAS_YAW = -0.95;
+    d.applyAxisAngle(new THREE.Vector3(0, 1, 0), WEST_BIAS_YAW).normalize();
+  }
+
+  return d;
 }
-  async function getVector(name: string): Promise<THREE.Vector3 | null> {
-    if (vectorsCache.current.has(name)) return vectorsCache.current.get(name)!;
 
+  // ----- Find mesh by name -----
+  function findCountryMesh(root: THREE.Object3D, name: string): THREE.Mesh | null {
+    let found: THREE.Mesh | null = null;
+    root.traverse((obj) => {
+      if (found) return;
+      if ((obj as any).isMesh && (obj as any).userData?.countryName === name) {
+        found = obj as THREE.Mesh;
+      }
+    });
+    return found;
+  }
 
+function computeSearchHitPoint(name: string): THREE.Vector3 | null {
+  const root = bordersGroupRef.current;
+  if (!root) return null;
+
+  const key = name.trim();
+
+  const centers = root.userData?.countryCenters as Record<string, THREE.Vector3> | undefined;
+  const centerDir = centers?.[key] ?? centers?.[key.toLowerCase()];
+
+  // If we don't even have a center direction, bail
+  if (!centerDir) return null;
+
+  // Try to raycast into the specific country mesh first
+  const mesh = findCountryMesh(root, key) ?? findCountryMesh(root, key.toLowerCase());
+
+  if (mesh) {
+    // Ray from far outside towards origin along that direction
+    const origin = centerDir.clone().multiplyScalar(50); // was 10
+    const direction = centerDir.clone().multiplyScalar(-1).normalize();
+
+    raycaster.set(origin, direction);
+    const hits = raycaster.intersectObject(mesh, true);
+    if (hits.length) return hits[0].point.clone();
+  }
+
+  // ---- FALLBACK ----
+  // If raycast misses use a point on the globe surface.
+  //sphere radius is 1.2
+  return centerDir.clone().normalize().multiplyScalar(1.2);
+}
+
+  async function getZoomForCountry(name: string): Promise<number> {
     // @ts-ignore
     if (!window.__countriesGeo) {
       const res = await fetch(`${window.location.origin}/data/countries.geojson`);
@@ -91,151 +223,156 @@ function RotatingGroup({
     }
     // @ts-ignore
     const data = window.__countriesGeo as any;
-
     const f = (data.features || []).find((x: any) => x?.properties?.name === name);
-    if (!f) return null;
+    if (!f) return 3.0;
 
-    const { label_x: lon, label_y: lat } = f.properties || {};
-    if (typeof lat !== "number" || typeof lon !== "number") return null;
+    const area = f.properties?.area || 1_000_000;
 
-    const v = latLongToVector3(lat, lon, 1).normalize();
-    vectorsCache.current.set(name, v);
-    return v;
-  }
-async function getZoomForCountry(name: string): Promise<number> {
-  // Load GeoJSON once and reuse it
-  // @ts-ignore
-  if (!window.__countriesGeo) {
-    const res = await fetch(`${window.location.origin}/data/countries.geojson`);
-    // @ts-ignore
-    window.__countriesGeo = await res.json();
-  }
-  // @ts-ignore
-  const data = window.__countriesGeo as any;
-  const f = (data.features || []).find((x: any) => x?.properties?.name === name);
-  if (!f) return 3.0; // fallback zoom
+    const minZoom = 2.0;
+    const maxZoom = 3.3;
+    const logArea = Math.log10(area + 1);
+    const normalized = 1 / (1 + Math.exp(-(logArea - 6.5)));
+    const zoom = minZoom + normalized * (maxZoom - minZoom);
 
-  const area = f.properties?.area || estimateFeatureArea(f);
-
-  // Smooth curve mapping area → zoom
-  const minZoom = 2.0; // closest for very small countries
-  const maxZoom = 3.3; // farthest for very large countries
-  const logArea = Math.log10(area + 1);
-
-  // Use a sigmoid instead of linear for better scaling across extremes
-  const normalized = 1 / (1 + Math.exp(-(logArea - 6.5))); // shift midpoint
-  const zoom = minZoom + normalized * (maxZoom - minZoom);
-
-  // Cap some specific large countries
-  if (["Australia", "Russia", "Canada", "United States", "China", "Brazil"].includes(name)) {
-    return Math.min(zoom + 0.2, maxZoom);
-  }
-
-  return zoom;
-}
-
-// fallback if area not provided in geojson
-function estimateFeatureArea(feature: any): number {
-  const coords = feature.geometry?.coordinates;
-  if (!coords) return 1_000_000; // fallback area
-  let total = 0;
-  const process = (poly: number[][]) => {
-    for (let i = 0; i < poly.length - 1; i++) {
-      const [x1, y1] = poly[i];
-      const [x2, y2] = poly[i + 1];
-      total += x1 * y2 - x2 * y1;
+    if (["Australia", "Russia", "Canada", "United States", "China", "Brazil"].includes(name)) {
+      return Math.min(zoom + 0.2, maxZoom);
     }
-  };
-  if (feature.geometry.type === "Polygon") process(coords[0]);
-  else if (feature.geometry.type === "MultiPolygon") coords.forEach((p: any) => process(p[0]));
-  return Math.abs(total) / 2;
-}
+    return zoom;
+  }
 
+  /** Focus effect */
 useEffect(() => {
   (async () => {
-    if (!focusName) return;
+    if (!focus) return;
 
-    const v = await getVector(focusName);
-    if (!v) return;
+    const { name, hitPoint } = focus;
+    const seq = ++focusSeq.current;
 
     const controls = controlsRef.current;
+    const dirNow = camera.position.clone().normalize();
+    const radiusNow = camera.position.length();
+
     if (controls) {
+      controls.enabled = false;
       controls.target.set(0, 0, 0);
-      controls.update();
+      hardResetOrbitDeltas(controls);
     }
 
-    camera.updateMatrixWorld(true);
+    // Wait for borders mesh to exist
+    const start = performance.now();
+    while (!bordersGroupRef.current && performance.now() - start < 2000) {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+    if (seq !== focusSeq.current) return;
 
-    const dirNow = camera.position.clone().normalize();
-    const dirNext = v.clone().negate().normalize();
+    const targetPoint =
+      hitPoint?.clone() ??
+      computeSearchHitPoint(name);
+
+    if (!targetPoint) {
+      if (controls) controls.enabled = true;
+      return;
+    }
+
+    const zoom = await getZoomForCountry(name);
+    if (seq !== focusSeq.current) return;
+
+    // Direction vectors
+    const dirNextRaw = targetPoint.clone().normalize();
+    const dirNext = applyCountryBias(name, dirNextRaw);
 
     fromDir.current.copy(dirNow);
     toDir.current.copy(dirNext);
 
-    t.current = 0.0001;
-    targetRadiusRef.current = null;
+
+    startRadiusRef.current = radiusNow;
+    targetRadiusRef.current = zoom;
+
+    targetPointRef.current = targetPoint.clone();
+
+    // Start animation
+    t.current = 0;
   })();
-}, [focusName, controlsRef, camera]);
+}, [focus?.nonce, focus?.name]);
 
 useFrame((_, delta) => {
-  // Only fetch zoom level once per country change
-  if (t.current < 1 && focusName && targetRadiusRef.current === null) {
-    (async () => {
-      targetRadiusRef.current = await getZoomForCountry(focusName);
-    })();
-  }
+  if (t.current >= 1) return;
 
+  const dt = Math.min(delta, 0.03); // clamp to avoid jumps
+  t.current = Math.min(1, t.current + dt * 0.25); // slower blend
+  const k = t.current * t.current * (3 - 2 * t.current); // smoothstep
+
+  const controls = controlsRef.current;
+
+  // Zoom interpolation
   const currentRadius = camera.position.length();
   const targetRadius = targetRadiusRef.current ?? currentRadius;
-  const zoomLerpSpeed = 1.2;
-  const radius = THREE.MathUtils.lerp(currentRadius, targetRadius, delta * zoomLerpSpeed);
+  const radius = THREE.MathUtils.lerp(
+    currentRadius,
+    targetRadius,
+    dt * 0.25
+  );
 
-  // Smooth ease — slower, more natural
-    if (t.current < 1) {
-      t.current = Math.min(1, t.current + delta * 0.4); // slower blend
-      const k = 1 - Math.exp(-2.2 * t.current);
-    // Spherical interpolation helper (avoids pole flip)
-    const dot = Math.min(Math.max(fromDir.current.dot(toDir.current), -1), 1);
-    const theta = Math.acos(dot) * k;
-    const rel = toDir.current
-      .clone()
-      .sub(fromDir.current.clone().multiplyScalar(dot))
-      .normalize();
+  const clampedRadius = THREE.MathUtils.clamp(
+    radius,
+    controls?.minDistance ?? 1.8,
+    controls?.maxDistance ?? 4
+  );
 
-    const dir = fromDir.current
-      .clone()
-      .multiplyScalar(Math.cos(theta))
-      .add(rel.multiplyScalar(Math.sin(theta)))
-      .normalize();
+  // Direction interpolation
+  const baseDir = slerpDir(fromDir.current, toDir.current, k);
 
-    camera.position.copy(dir.multiplyScalar(radius));
-    controlsRef.current?.update();
-  }// else if (isRotationEnabled) {
-  //  groupRef.current?.rotateY(delta * 0.02); // idle spin
- // }
+  const desiredNDC = new THREE.Vector2(0, 0.0);
+
+  const targetWorld = targetPointRef.current
+    ? targetPointRef.current.clone()
+    : baseDir.clone().multiplyScalar(1.2);
+
+  const correctedDir = adjustDirToPlaceTargetAtNDC({
+    dir: baseDir,
+    camRadius: clampedRadius,
+    targetWorld,
+    camera: camera as THREE.PerspectiveCamera,
+    desiredNDC,
+  });
+
+
+  const correctionAlpha = THREE.MathUtils.smoothstep(k, 0.25, 0.85);
+
+  const finalDir = slerpDir(baseDir, correctedDir, correctionAlpha);
+
+  camera.position.copy(finalDir.multiplyScalar(clampedRadius));
+  camera.lookAt(0, 0, 0);
+
+
+  if (t.current >= 1 && controls) {
+    hardResetOrbitDeltas(controls);
+    controls.target.set(0, 0, 0);
+    controls.update();
+    controls.enabled = true;
+  }
 });
-
-
-
 
 
   return (
     <group ref={groupRef}>
       <Earth isDark={isDark} />
-      <CountryBorders isDark={isDark} />
+      <CountryBorders ref={bordersGroupRef} isDark={isDark} />
       <CountryLabels isDark={isDark} />
     </group>
   );
 }
-
-
 
 /** ---------- Globe (parent) ---------- */
 export default function Globe() {
   const [isDark, setIsDark] = useState(false);
   const [isRotationEnabled, setIsRotationEnabled] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
-  const [focusName, setFocusName] = useState<string | null>(null);
+
+  const [focus, setFocus] = useState<{ name: string; nonce: number; hitPoint?: THREE.Vector3 } | null>(
+    null
+  );
+
   const [imageCache, setImageCache] = useState(new Map<string, string[]>());
   const [preloadedImages, setPreloadedImages] = useState<string[]>([]);
   const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
@@ -243,37 +380,33 @@ export default function Globe() {
 
   // Detect dark mode changes
   useEffect(() => {
-    const update = () =>
-      setIsDark(document.documentElement.classList.contains("dark"));
+    const update = () => setIsDark(document.documentElement.classList.contains("dark"));
     update();
     const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => observer.disconnect();
   }, []);
 
-  // External "focus-country" event: detail = { name }
+  // Search bar triggers focus-country
   useEffect(() => {
     const handleFocus = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (!detail?.name) return;
 
-      setSelectedCountry(detail.name);
-      setFocusName(detail.name);
+      const name = String(detail.name);
+      setSelectedCountry(name);
+      setFocus({ name, nonce: Date.now() + Math.random() });
       setIsRotationEnabled(false);
     };
     window.addEventListener("focus-country", handleFocus);
     return () => window.removeEventListener("focus-country", handleFocus);
   }, []);
 
-  // Interaction timers (resume idle rotation after 60s) OUTDATED
   const handleUserInteractionEnd = () => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
     inactivityTimer.current = setTimeout(() => {
       setIsRotationEnabled(true);
-      setFocusName(null);
+      setFocus(null);
     }, 60000);
   };
 
@@ -284,152 +417,143 @@ export default function Globe() {
 
   const [panelVisible, setPanelVisible] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"info" | "social">("info");
-async function preloadCountryImages(name: string) {
-  if (imageCache.has(name)) {
-    setPreloadedImages(imageCache.get(name)!);
-    return;
+
+  async function preloadCountryImages(name: string) {
+    if (imageCache.has(name)) {
+      setPreloadedImages(imageCache.get(name)!);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/countryImages?name=${encodeURIComponent(name)}`);
+      const d = await res.json();
+      const urls = d.urls?.length ? d.urls : ["/fallbacks/landscape.jpg", "/fallbacks/mountain.jpg"];
+
+      imageCache.set(name, urls);
+      setImageCache(new Map(imageCache));
+      setPreloadedImages(urls);
+    } catch {
+      setPreloadedImages(["/fallbacks/landscape.jpg", "/fallbacks/mountain.jpg"]);
+    }
   }
 
-  try {
-    const res = await fetch(`/api/countryImages?name=${encodeURIComponent(name)}`);
-    const d = await res.json();
-    const urls = d.urls?.length
-      ? d.urls
-      : ["/fallbacks/landscape.jpg", "/fallbacks/mountain.jpg"];
-
-    imageCache.set(name, urls);
-    setImageCache(new Map(imageCache)); // force re-render
-    setPreloadedImages(urls);
-  } catch {
-    setPreloadedImages(["/fallbacks/landscape.jpg", "/fallbacks/mountain.jpg"]);
-  }
-}
-
-useEffect(() => {
-  if (!selectedCountry) {
+  useEffect(() => {
+    if (!selectedCountry) {
+      setPanelVisible(false);
+      return;
+    }
+    preloadCountryImages(selectedCountry);
     setPanelVisible(false);
-    return;
-  }
-  preloadCountryImages(selectedCountry);
-  setPanelVisible(false);
-  const timer = setTimeout(() => {
-    setPanelVisible(true);
-  }, 1500); // 1.5s delay
-
-  return () => clearTimeout(timer);
-}, [selectedCountry]);
-
+    const timer = setTimeout(() => setPanelVisible(true), 1500);
+    return () => clearTimeout(timer);
+  }, [selectedCountry]);
 
   return (
     <div className="relative flex items-center justify-center w-full h-screen overflow-hidden">
-<Canvas
-  camera={{ position: [35, 30, 4], fov: 45 }}
-  gl={{ alpha: true, antialias: true }}
-  performance={{ min: 0.3 }}
-  onCreated={({ camera }) => {
-    camera.layers.enable(0); // Globe layer
-    camera.layers.enable(1); // Labels layer
-  }}
->
-  <ambientLight intensity={isDark ? 8.4 : 4.5} />
+      <Canvas
+        camera={{ position: [35, 30, 4], fov: 45 }}
+        gl={{ alpha: true, antialias: true }}
+        performance={{ min: 0.3 }}
+        onCreated={({ camera }) => {
+          camera.layers.enable(0);
+          camera.layers.enable(1);
+        }}
+      >
+        <ambientLight intensity={isDark ? 8.4 : 4.5} />
 
-  <Suspense fallback={null}>
-    <RotatingGroup
-      isDark={isDark}
-      isRotationEnabled={isRotationEnabled}
-      onCountrySelect={(name) => {
-        preloadCountryImages(name);
-        setSelectedCountry(name);
-        setFocusName(name);
-        setIsRotationEnabled(false);
-      }}
-      focusName={focusName}
-      controlsRef={controlsRef}
-    />
-  </Suspense>
+        <Suspense fallback={null}>
+          <RotatingGroup
+            isDark={isDark}
+            isRotationEnabled={isRotationEnabled}
+            onCountrySelect={(name, hitPoint) => {
+              // Click path uses exact hitPoint
+              preloadCountryImages(name);
+              setSelectedCountry(name);
+              setFocus({ name, nonce: Date.now() + Math.random(), hitPoint });
+              setIsRotationEnabled(false);
+            }}
+            focus={focus}
+            controlsRef={controlsRef}
+          />
+        </Suspense>
 
-  <OrbitControls
-    ref={controlsRef}
-    enablePan={false}
-    enableZoom
-    minDistance={1.8}
-    maxDistance={4}
-    zoomSpeed={0.4}
-    rotateSpeed={0.6}
-    onStart={handleUserInteractionStart}
-    onEnd={handleUserInteractionEnd}
-  />
-</Canvas>
-
-
-{panelVisible && selectedCountry && (
-  <>
-    {/* Desktop: both panels visible */}
-    <SocialPanel
-      open={true}
-      selectedCountry={selectedCountry}
-      onClose={() => setSelectedCountry(null)}
-      className="hidden lg:flex lg:flex-col lg:top-24 lg:bottom-6 lg:left-4 lg:w-[360px] lg:max-h-[calc(100vh-7rem)]"
-    />
-
-    <div className="hidden lg:block">
-      <CountryInfoPanel
-        key={selectedCountry.replace(/\s+/g, "-").toLowerCase()}
-        selected={selectedCountry}
-        onClose={() => setSelectedCountry(null)}
-        preloadedImages={preloadedImages}
-      />
-    </div>
-
-    {/* MOBILE: toggle between Info & Social */}
-    <div className="lg:hidden">
-      {mobilePanel === "info" ? (
-        <CountryInfoPanel
-          key={selectedCountry.replace(/\s+/g, "-").toLowerCase()}
-          selected={selectedCountry}
-          onClose={() => setSelectedCountry(null)}
-          preloadedImages={preloadedImages}
+        <OrbitControls
+          ref={controlsRef}
+          enablePan={false}
+          enableZoom
+          minDistance={1.8}
+          maxDistance={4}
+          zoomSpeed={0.4}
+          rotateSpeed={0.3}
+          onStart={handleUserInteractionStart}
+          onEnd={handleUserInteractionEnd}
         />
-      ) : (
-        <SocialPanel
-          open={true}
-          selectedCountry={selectedCountry}
-          onClose={() => setSelectedCountry(null)}
-          className="flex flex-col top-[5.5rem] bottom-24 left-0 right-0 mx-3"
-        />
+      </Canvas>
+
+      {panelVisible && selectedCountry && (
+        <>
+          <SocialPanel
+            open={true}
+            selectedCountry={selectedCountry}
+            onClose={() => setSelectedCountry(null)}
+            className="hidden lg:flex lg:flex-col lg:top-24 lg:bottom-6 lg:left-4 lg:w-[360px] lg:max-h-[calc(100vh-7rem)]"
+          />
+
+          <div className="hidden lg:block">
+            <CountryInfoPanel
+              key={selectedCountry.replace(/\s+/g, "-").toLowerCase()}
+              selected={selectedCountry}
+              onClose={() => setSelectedCountry(null)}
+              preloadedImages={preloadedImages}
+            />
+          </div>
+
+          <div className="lg:hidden">
+            {mobilePanel === "info" ? (
+              <CountryInfoPanel
+                key={selectedCountry.replace(/\s+/g, "-").toLowerCase()}
+                selected={selectedCountry}
+                onClose={() => setSelectedCountry(null)}
+                preloadedImages={preloadedImages}
+              />
+            ) : (
+              <SocialPanel
+                open={true}
+                selectedCountry={selectedCountry}
+                onClose={() => setSelectedCountry(null)}
+                className="flex flex-col top-[5.5rem] bottom-24 left-0 right-0 mx-3"
+              />
+            )}
+
+            <div className="fixed bottom-4 inset-x-0 flex justify-center z-50">
+              <div className="inline-flex rounded-full bg-slate-900/85 border border-white/15 shadow-lg shadow-black/60 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setMobilePanel("info")}
+                  className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
+                    mobilePanel === "info"
+                      ? "bg-sky-500 text-white"
+                      : "text-slate-200 hover:bg-white/5"
+                  }`}
+                >
+                  Info
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobilePanel("social")}
+                  className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
+                    mobilePanel === "social"
+                      ? "bg-pink-500 text-white"
+                      : "text-slate-200 hover:bg-white/5"
+                  }`}
+                >
+                  Social
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
-
-      {/* Bottom toggle */}
-      <div className="fixed bottom-4 inset-x-0 flex justify-center z-50">
-        <div className="inline-flex rounded-full bg-slate-900/85 border border-white/15 shadow-lg shadow-black/60 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setMobilePanel("info")}
-            className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
-              mobilePanel === "info"
-                ? "bg-sky-500 text-white"
-                : "text-slate-200 hover:bg-white/5"
-            }`}
-          >
-            Info
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobilePanel("social")}
-            className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
-              mobilePanel === "social"
-                ? "bg-pink-500 text-white"
-                : "text-slate-200 hover:bg-white/5"
-            }`}
-          >
-            Social
-          </button>
-        </div>
-      </div>
-    </div>
-  </>
-)}
-
     </div>
   );
 }

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 
-export function useCountryClick(onSelect: (name: string) => void) {
+export function useCountryClick(onSelect: (name: string, hitPoint: THREE.Vector3) => void) {
   const { gl, camera, scene } = useThree();
   const raycaster = useRef(new THREE.Raycaster()).current;
   const mouse = new THREE.Vector2();
@@ -17,7 +17,6 @@ export function useCountryClick(onSelect: (name: string) => void) {
     depthWrite: false,
   });
 
-  // Track mouse down timing
   const mouseDownTime = useRef<number | null>(null);
 
   function clearHover() {
@@ -44,28 +43,19 @@ export function useCountryClick(onSelect: (name: string) => void) {
     }
 
     function handleClick(event: MouseEvent) {
-      // Ignore long holds (>250 ms)
       const now = performance.now();
-      const heldFor = mouseDownTime.current
-        ? now - mouseDownTime.current
-        : 0;
-      if (heldFor > 250) {
-        // Treat as a drag/hold, not a click
-        return;
-      }
+      const heldFor = mouseDownTime.current ? now - mouseDownTime.current : 0;
+      if (heldFor > 250) return; // drag/hold
 
       const intersects = getIntersects(event);
-      if (intersects.length > 0) {
-        const hit = intersects[0];
-        const name = hit.object.userData?.countryName;
+      if (!intersects.length) return;
 
-        clearHover();
+      const hit = intersects[0];
+      const name = hit.object.userData?.countryName as string | undefined;
+      if (!name) return;
 
-        if (name) {
-          console.log("🟢 Click:", name);
-          onSelect(name);
-        }
-      }
+      clearHover();
+      onSelect(name, hit.point.clone());
     }
 
     function handleMove(event: MouseEvent) {
@@ -94,5 +84,5 @@ export function useCountryClick(onSelect: (name: string) => void) {
       gl.domElement.removeEventListener("click", handleClick);
       gl.domElement.removeEventListener("mousemove", handleMove);
     };
-  }, [gl, camera, scene, onSelect]);
+  }, [gl, camera, scene, onSelect, raycaster]);
 }
