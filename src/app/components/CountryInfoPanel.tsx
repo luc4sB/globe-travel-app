@@ -49,6 +49,11 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(2);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setSubmitting(false);
+  }, [mode, selected]);
 
   //Load airports + cities
   useEffect(() => {
@@ -119,7 +124,7 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
     setFilteredAirports(filtered.slice(0, 8));
   };
 
-    const handleDateChange = (type: "depart" | "return", value: string) => {
+  const handleDateChange = (type: "depart" | "return", value: string) => {
     if (type === "depart") {
       setDepartDate(value);
       if (returnDate && value > returnDate) setReturnDate("");
@@ -140,6 +145,9 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
 
   //Continue buttons
   const handleContinueFlights = () => {
+    if (submitting) return;
+    setSubmitting(true);
+
     const selectedAirport = airports.find(
       (a) =>
         a.iata_code.toLowerCase() === departAirport.toLowerCase() ||
@@ -149,14 +157,17 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
 
     if (!selectedAirport) {
       alert("Please select a valid departure airport.");
+      setSubmitting(false);
       return;
     }
     if (!departDate) {
       alert("Please select a departure date.");
+      setSubmitting(false);
       return;
     }
     if (tripType === "return" && !returnDate) {
       alert("Please select a valid return date.");
+      setSubmitting(false);
       return;
     }
 
@@ -166,16 +177,22 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
       departDate,
       ...(tripType === "return" && { returnDate }),
     });
-    router.push(`/airports/${encodeURIComponent(selected!)}?${params}`);
+
+    router.push(`/airports/${encodeURIComponent(selected!)}?${params.toString()}`);
   };
 
   const handleContinueHotels = () => {
+    if (submitting) return;
+    setSubmitting(true);
+
     if (!selectedCity) {
       alert("Please select a city.");
+      setSubmitting(false);
       return;
     }
     if (!checkIn || !checkOut) {
       alert("Please select valid check-in and check-out dates.");
+      setSubmitting(false);
       return;
     }
     const params = new URLSearchParams({
@@ -185,7 +202,7 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
       checkOut,
       guests: guests.toString(),
     });
-    router.push(`/hotels/results?${params}`);
+    router.push(`/hotels/results?${params.toString()}`);
   };
 
   return (
@@ -197,7 +214,10 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={() => {
+              setSubmitting(false);
+              onClose();
+            }}
           />
 
           <motion.div
@@ -210,7 +230,10 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
           >
             <div className="relative h-full flex flex-col">
               <button
-                onClick={onClose}
+                onClick={() => {
+                  setSubmitting(false);
+                  onClose();
+                }}
                 className="absolute top-4 right-4 p-2 rounded-full bg-white/20 dark:bg-zinc-800/60 hover:bg-white/30 transition z-10"
               >
                 <X size={20} className="text-white" />
@@ -264,28 +287,29 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                 </div>
               )}
 
-
               {/* Main content */}
               <div className="p-6 space-y-5">
                 {/* Mode toggle */}
                 <div className="flex justify-center gap-3 mb-3">
                   <button
+                    disabled={submitting}
                     onClick={() => setMode("flights")}
                     className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                       mode === "flights"
                         ? "bg-sky-600 text-white shadow-md scale-[1.05]"
                         : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
-                    }`}
+                    } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
                   >
                     <Plane size={14} /> Flights
                   </button>
                   <button
+                    disabled={submitting}
                     onClick={() => setMode("hotels")}
                     className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                       mode === "hotels"
                         ? "bg-pink-600 text-white shadow-md scale-[1.05]"
                         : "bg-transparent border border-pink-400/50 text-pink-400 hover:bg-pink-500/10"
-                    }`}
+                    } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
                   >
                     <Bed size={14} /> Hotels
                   </button>
@@ -293,31 +317,33 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
 
                 {mode === "flights" && (
                   <>
-                     {/* Trip Type */}
-      <div className="flex justify-center gap-3 mb-3">
-        <button
-          type="button"
-          onClick={() => setTripType("oneway")}
-          className={`px-5 py-1.5 rounded-full text-sm font-medium transition ${
-            tripType === "oneway"
-              ? "bg-sky-500 text-white shadow-md"
-              : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
-          }`}
-        >
-          One Way
-        </button>
-        <button
-          type="button"
-          onClick={() => setTripType("return")}
-          className={`px-5 py-1.5 rounded-full text-sm font-medium transition ${
-            tripType === "return"
-              ? "bg-sky-500 text-white shadow-md"
-              : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
-          }`}
-        >
-          Return
-        </button>
-      </div>
+                    {/* Trip Type */}
+                    <div className="flex justify-center gap-3 mb-3">
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => setTripType("oneway")}
+                        className={`px-5 py-1.5 rounded-full text-sm font-medium transition ${
+                          tripType === "oneway"
+                            ? "bg-sky-500 text-white shadow-md"
+                            : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
+                        } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
+                      >
+                        One Way
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => setTripType("return")}
+                        className={`px-5 py-1.5 rounded-full text-sm font-medium transition ${
+                          tripType === "return"
+                            ? "bg-sky-500 text-white shadow-md"
+                            : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
+                        } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
+                      >
+                        Return
+                      </button>
+                    </div>
 
                     <div className="relative">
                       <label className="text-xs text-gray-300 mb-1 block">Departure Airport</label>
@@ -329,7 +355,8 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                           onChange={(e) => handleAirportSearch(e.target.value)}
                           onFocus={() => setShowAirportDropdown(true)}
                           onBlur={() => setTimeout(() => setShowAirportDropdown(false), 200)}
-                          className="w-full bg-transparent text-gray-100 placeholder-gray-400 focus:outline-none text-sm"
+                          disabled={submitting}
+                          className="w-full bg-transparent text-gray-100 placeholder-gray-400 focus:outline-none text-sm disabled:opacity-60"
                         />
                       </div>
 
@@ -339,12 +366,15 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                             <li
                               key={a.iata_code}
                               onClick={() => {
+                                if (submitting) return;
                                 setDepartAirport(`${a.city} (${a.iata_code})`);
                                 setShowAirportDropdown(false);
                               }}
                               className="px-4 py-2 cursor-pointer hover:bg-sky-100/70 dark:hover:bg-zinc-700/70 transition text-sm text-gray-800 dark:text-gray-100 flex justify-between"
                             >
-                              <span>{a.city} — {a.name}</span>
+                              <span>
+                                {a.city} — {a.name}
+                              </span>
                               <span className="text-xs text-sky-400 font-mono">{a.iata_code}</span>
                             </li>
                           ))}
@@ -359,8 +389,9 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                         <input
                           type="date"
                           value={departDate}
-                          onChange={(e) => setDepartDate(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none"
+                          onChange={(e) => handleDateChange("depart", e.target.value)}
+                          disabled={submitting}
+                          className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none disabled:opacity-60"
                         />
                       </div>
                       {tripType === "return" && (
@@ -369,8 +400,9 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                           <input
                             type="date"
                             value={returnDate}
-                            onChange={(e) => setReturnDate(e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none"
+                            onChange={(e) => handleDateChange("return", e.target.value)}
+                            disabled={submitting}
+                            className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none disabled:opacity-60"
                           />
                         </div>
                       )}
@@ -378,9 +410,26 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
 
                     <button
                       onClick={handleContinueFlights}
-                      className="w-full bg-sky-500 hover:bg-sky-600 text-white rounded-xl py-3 font-semibold transition-all shadow-md hover:shadow-lg mt-2"
+                      disabled={submitting}
+                      className="
+                        w-full rounded-xl py-3 font-semibold
+                        transition-all mt-2
+                        disabled:cursor-not-allowed
+                        bg-gradient-to-r from-sky-500 to-sky-600
+                        hover:from-sky-400 hover:to-sky-600
+                        shadow-md hover:shadow-lg
+                        disabled:opacity-70
+                      "
                     >
-                      View Airports in {selected}
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 flex items-center justify-center">
+                          {submitting && <Loader2 className="animate-spin" size={16} />}
+                        </span>
+
+                        <span className="leading-none">
+                          {submitting ? "Loading airports…" : `Search airports in ${selected}`}
+                        </span>
+                      </span>
                     </button>
                   </>
                 )}
@@ -397,7 +446,8 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                           onChange={(e) => handleCitySearch(e.target.value)}
                           onFocus={() => setShowCityDropdown(true)}
                           onBlur={() => setTimeout(() => setShowCityDropdown(false), 200)}
-                          className="w-full bg-transparent text-gray-100 placeholder-gray-400 focus:outline-none text-sm"
+                          disabled={submitting}
+                          className="w-full bg-transparent text-gray-100 placeholder-gray-400 focus:outline-none text-sm disabled:opacity-60"
                         />
                       </div>
 
@@ -407,6 +457,7 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                             <li
                               key={city}
                               onClick={() => {
+                                if (submitting) return;
                                 setSelectedCity(city);
                                 setShowCityDropdown(false);
                               }}
@@ -427,7 +478,8 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                           type="date"
                           value={checkIn}
                           onChange={(e) => setCheckIn(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-pink-400 outline-none"
+                          disabled={submitting}
+                          className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-pink-400 outline-none disabled:opacity-60"
                         />
                       </div>
                       <div>
@@ -436,7 +488,8 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                           type="date"
                           value={checkOut}
                           onChange={(e) => setCheckOut(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-pink-400 outline-none"
+                          disabled={submitting}
+                          className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-pink-400 outline-none disabled:opacity-60"
                         />
                       </div>
                     </div>
@@ -446,16 +499,18 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                       <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30">
                         <button
                           type="button"
+                          disabled={submitting}
                           onClick={() => setGuests(Math.max(1, guests - 1))}
-                          className="px-3 py-1 text-gray-300 hover:text-white text-lg"
+                          className="px-3 py-1 text-gray-300 hover:text-white text-lg disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           −
                         </button>
                         <span className="text-gray-100 font-semibold">{guests}</span>
                         <button
                           type="button"
+                          disabled={submitting}
                           onClick={() => setGuests(guests + 1)}
-                          className="px-3 py-1 text-gray-300 hover:text-white text-lg"
+                          className="px-3 py-1 text-gray-300 hover:text-white text-lg disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           +
                         </button>
@@ -464,9 +519,25 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
 
                     <button
                       onClick={handleContinueHotels}
-                      className="w-full bg-pink-500 hover:bg-pink-600 text-white rounded-xl py-3 font-semibold transition-all shadow-md hover:shadow-lg mt-2"
+                      disabled={submitting}
+                      className="
+                        w-full rounded-xl py-3 font-semibold
+                        transition-all mt-2
+                        disabled:cursor-not-allowed
+                        bg-gradient-to-r from-pink-500 to-pink-600
+                        hover:from-pink-400 hover:to-pink-600
+                        shadow-md hover:shadow-lg
+                        disabled:opacity-70
+                      "
                     >
-                      Find Hotels in {selected}
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 flex items-center justify-center">
+                          {submitting && <Loader2 className="animate-spin" size={16} />}
+                        </span>
+                        <span className="leading-none">
+                          {submitting ? "Searching hotels…" : `Find Hotels in ${selected}`}
+                        </span>
+                      </span>
                     </button>
                   </>
                 )}
