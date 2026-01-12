@@ -11,6 +11,7 @@ import CountryLabels from "./CountryLabels";
 import { useCountryClick } from "../hooks/CountryClick";
 import CountryInfoPanel from "./CountryInfoPanel";
 import SocialPanel from "./SocialPanel";
+import CreateTripModal from "./CreateTripModal";
 
 /** ---------- Earth ---------- */
 function Earth({ isDark }: { isDark: boolean }) {
@@ -377,6 +378,8 @@ export default function Globe() {
   const [preloadedImages, setPreloadedImages] = useState<string[]>([]);
   const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
   const controlsRef = useRef<any>(null);
+  const [createTripOpen, setCreateTripOpen] = useState(false);
+  const [tripsRefreshKey, setTripsRefreshKey] = useState(0);
 
   // Detect dark mode changes
   useEffect(() => {
@@ -496,7 +499,16 @@ export default function Globe() {
             open={true}
             selectedCountry={selectedCountry}
             onClose={() => setSelectedCountry(null)}
-            className="hidden lg:flex lg:flex-col lg:top-24 lg:bottom-6 lg:left-4 lg:w-[360px] lg:max-h-[calc(100vh-7rem)]"
+            onCreateTrip={() => setCreateTripOpen(true)}
+            refreshKey={tripsRefreshKey}
+            slideFrom="left"
+            className="hidden lg:block left-0"
+          />
+          <CreateTripModal
+            open={createTripOpen}
+            countryCode={selectedCountry}
+            onClose={() => setCreateTripOpen(false)}
+            onCreated={() => setTripsRefreshKey((k) => k + 1)}
           />
 
           <div className="hidden lg:block">
@@ -521,10 +533,13 @@ export default function Globe() {
                 open={true}
                 selectedCountry={selectedCountry}
                 onClose={() => setSelectedCountry(null)}
-                className="flex flex-col top-[5.5rem] bottom-24 left-0 right-0 mx-3"
+                onCreateTrip={() => setCreateTripOpen(true)}
+                refreshKey={tripsRefreshKey}
+                className="right-0 left-auto"
+                slideFrom="right"
               />
             )}
-
+            
             <div className="fixed bottom-4 inset-x-0 flex justify-center z-50">
               <div className="inline-flex rounded-full bg-slate-900/85 border border-white/15 shadow-lg shadow-black/60 overflow-hidden">
                 <button
