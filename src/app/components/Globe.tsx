@@ -12,6 +12,7 @@ import { useCountryClick } from "../hooks/CountryClick";
 import CountryInfoPanel from "./CountryInfoPanel";
 import SocialPanel from "./SocialPanel";
 import CreateTripModal from "./CreateTripModal";
+import { getCountriesGeoJSON } from "../lib/countriesGeo";
 
 /** ---------- Earth ---------- */
 function Earth({ isDark }: { isDark: boolean }) {
@@ -216,14 +217,7 @@ function computeSearchHitPoint(name: string): THREE.Vector3 | null {
 }
 
   async function getZoomForCountry(name: string): Promise<number> {
-    // @ts-ignore
-    if (!window.__countriesGeo) {
-      const res = await fetch(`${window.location.origin}/data/countries.geojson`);
-      // @ts-ignore
-      window.__countriesGeo = await res.json();
-    }
-    // @ts-ignore
-    const data = window.__countriesGeo as any;
+    const data = await getCountriesGeoJSON();
     const f = (data.features || []).find((x: any) => x?.properties?.name === name);
     if (!f) return 3.0;
 

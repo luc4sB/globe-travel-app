@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { Billboard, Text } from "@react-three/drei";
 import { useThree, useFrame } from "@react-three/fiber";
 import { setCountryVector } from "../lib/countryVectors";
+import { getCountriesGeoJSON } from "../lib/countriesGeo";
 
 function latLongToVector3(lat: number, lon: number, radius = 1.275) {
   const phi = (90 - lat) * (Math.PI / 180);
@@ -69,10 +70,7 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
 
   // ---------------- GEOJSON LOAD ----------------
   useEffect(() => {
-    const url = `${window.location.origin}/data/countries.geojson`;
-    fetch(url)
-      .then((r) => r.json())
-      .then((data) => {
+  getCountriesGeoJSON().then((data) => {
         const blacklist = new Set([
           "Isle of Man","Guernsey","Jersey","Gibraltar","Svalbard","Åland",
           "Liechtenstein","San Marino","Andorra","Monaco","Vatican","Kosovo",
@@ -152,8 +150,10 @@ export default function CountryLabels({ isDark = false }: { isDark?: boolean }) 
         }
 
         setLabels(filtered);
-      });
-  }, []);
+      })
+      .catch((err) => console.error("Failed to load countries.geojson", err));
+}, []);
+
   const isUserMoving = useRef(false);
 
   // ---------------- MAIN LABEL UPDATE ----------------

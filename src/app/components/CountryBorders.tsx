@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, forwardRef } from "react";
 import * as THREE from "three";
 import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { getCountriesGeoJSON } from "../lib/countriesGeo";
 
 function latLongToVector3(lat: number, lon: number, radius = 1.205) {
   const phi = (90 - lat) * (Math.PI / 180);
@@ -32,10 +33,8 @@ const CountryBorders = forwardRef<THREE.Group, { isDark?: boolean }>(function Co
   const [countryCenters, setCountryCenters] = useState<Record<string, THREE.Vector3>>({});
 
   useEffect(() => {
-    const url = `${window.location.origin}/data/countries.geojson`;
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
+  getCountriesGeoJSON()
+    .then((data) => {
         const lines: LineData[] = [];
         const meshes: CountryMesh[] = [];
         const centers: Record<string, THREE.Vector3> = {};

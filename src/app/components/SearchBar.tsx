@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getCountriesGeoJSON } from "../lib/countriesGeo";
 
 type Country = {
   name: string;
@@ -50,9 +51,7 @@ const blacklist = new Set([
 
 
 useEffect(() => {
-  const url = `${window.location.origin}/data/countries.geojson`;
-  fetch(url)
-    .then((res) => res.json())
+  getCountriesGeoJSON()
     .then((data) => {
       const countries: Country[] = (data.features ?? [])
         .filter((f: any) => {
