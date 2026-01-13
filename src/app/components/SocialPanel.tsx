@@ -5,6 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { collection, getDocs, limit, orderBy, query, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "./AuthProvider";
+import { AnimatePresence, motion } from "framer-motion";
+import { X } from "lucide-react";
+
 
 type Trip = {
   id: string;
@@ -114,49 +117,52 @@ export default function SocialPanel({
 
   const hasTrips = trips.length > 0;
 
-  return (
-    <>
-      {open && (
-        <div
-          className="fixed inset-0 bg-black/30 backdrop-blur-sm lg:hidden z-30"
+return (
+  <AnimatePresence>
+    {open && selectedCountry && (
+      <>
+        {/* Mobile overlay */}
+        <motion.div
+          className="fixed inset-0 bg-black/30 backdrop-blur-sm md:hidden z-40"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
           onClick={onClose}
         />
-      )}
 
-      <div
-        className={`
-          fixed z-40
-          top-0 bottom-0
-          w-full sm:w-[440px]
-          transition-all duration-300 ease-out
-          pointer-events-auto
-          ${
-            open
-              ? "opacity-100 translate-x-0"
-              : slideFrom === "right"
-                ? "opacity-0 translate-x-full pointer-events-none"
-                : "opacity-0 -translate-x-full pointer-events-none"
-          }
-          ${className}
-        `}
-      >
-        <div className="h-full w-full rounded-3xl backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40 dark:from-zinc-900/70 dark:to-black/60 border border-white/10 shadow-2xl shadow-black/60 overflow-hidden flex flex-col">
-          <div className="px-4 py-3 bg-gradient-to-r from-slate-900 via-slate-900 to-sky-900/60 border-b border-white/10 flex items-center justify-between">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-xs uppercase tracking-[0.2em] text-slate-400">COMMUNITY</span>
-              <h2 className="text-sm font-semibold text-white">Trips in {selectedCountry}</h2>
-            </div>
-
+        {/* Panel */}
+        <motion.aside
+          key={`${selectedCountry}-${refreshKey ?? 0}`}
+          initial={{ x: "-100%" }}
+          animate={{ x: 0 }}
+          exit={{ x: "-100%" }}
+          transition={{ type: "spring", stiffness: 90, damping: 14 }}
+          className={[
+            "fixed left-0 top-0 z-50 h-full w-full sm:w-[440px]",
+            "backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40",
+            "dark:from-zinc-900/70 dark:to-black/60",
+            "border-r border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.4)]",
+            "overflow-hidden",
+            className ?? "",
+          ].join(" ")}
+        >
+          <div className="relative h-full flex flex-col">
+            {/* Close button */}
             <button
               onClick={onClose}
-              className="text-[11px] px-3 py-1 rounded-full bg-white/5 hover:bg-white/15 text-slate-200 transition-colors"
+              className="absolute top-4 right-4 p-2 rounded-full bg-white/20 dark:bg-zinc-800/60 hover:bg-white/30 transition z-10"
+              aria-label="Close"
             >
-              Close
+              <X size={20} className="text-white" />
             </button>
-          </div>
 
-          <div className="flex-1 flex flex-col bg-gradient-to-b from-slate-900/80 to-slate-950">
-            <div className="px-4 pt-3 pb-2 border-b border-white/5">
+            {/* Header title row */}
+            <div className="pt-6 pb-3 px-6 border-b border-white/10">
+              <h2 className="text-lg font-semibold text-white/90">Community</h2>
+            </div>
+
+            {/* Share bar */}
+            <div className="px-6 pt-4 pb-4 border-b border-white/10">
               {user ? (
                 <button
                   onClick={onCreateTrip}
@@ -172,7 +178,8 @@ export default function SocialPanel({
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            {/* Feed */}
+            <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {loading && (
                 <div className="space-y-3">
                   <div className="h-56 rounded-2xl bg-slate-800/60 animate-pulse" />
@@ -193,7 +200,7 @@ export default function SocialPanel({
                 trips.map((trip) => (
                   <article
                     key={trip.id}
-                    className="rounded-2xl border border-white/10 bg-slate-900/70 overflow-hidden shadow-sm shadow-black/40"
+                    className="rounded-2xl border border-white/10 bg-black/20 hover:bg-black/25 transition overflow-hidden shadow-sm shadow-black/40"
                   >
                     {trip.imageUrl && (
                       <div className="relative w-full aspect-[16/9] bg-white/5">
@@ -246,8 +253,10 @@ export default function SocialPanel({
                 ))}
             </div>
           </div>
-        </div>
-      </div>
-    </>
-  );
+        </motion.aside>
+      </>
+    )}
+  </AnimatePresence>
+);
+
 }

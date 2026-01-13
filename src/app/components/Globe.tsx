@@ -535,8 +535,8 @@ export default function Globe() {
                 onClose={() => setSelectedCountry(null)}
                 onCreateTrip={() => setCreateTripOpen(true)}
                 refreshKey={tripsRefreshKey}
-                className="right-0 left-auto"
-                slideFrom="right"
+                className="left-0 right-auto"
+                slideFrom="left"
               />
             )}
             
