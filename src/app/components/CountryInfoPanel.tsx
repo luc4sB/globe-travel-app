@@ -226,7 +226,7 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 90, damping: 14 }}
-            className="fixed right-0 top-0 z-50 h-full w-full sm:w-[440px] backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40 dark:from-zinc-900/70 dark:to-black/60 border-l border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.4)] overflow-y-auto"
+            className="fixed right-0 top-0 z-50 h-full w-full sm:w-[440px] lg:top-[70px] lg:h-[calc(100vh-70px)] backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40 dark:from-zinc-900/70 dark:to-black/60 border-l border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.4)] overflow-y-auto"
           >
             <div className="relative h-full flex flex-col">
               <button
@@ -288,15 +288,15 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
               )}
 
               {/* Main content */}
-              <div className="p-6 space-y-5">
+              <div className="p-4 space-y-3">
                 {/* Mode toggle */}
-                <div className="flex justify-center gap-3 mb-3">
+                <div className="flex justify-center gap-2 mb-2">
                   <button
                     disabled={submitting}
                     onClick={() => setMode("flights")}
-                    className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                    className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
                       mode === "flights"
-                        ? "bg-sky-600 text-white shadow-md scale-[1.05]"
+                        ? "bg-sky-600 text-white shadow-md "
                         : "bg-transparent border border-sky-400/50 text-sky-400 hover:bg-sky-500/10"
                     } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
                   >
@@ -305,9 +305,9 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                   <button
                     disabled={submitting}
                     onClick={() => setMode("hotels")}
-                    className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                    className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
                       mode === "hotels"
-                        ? "bg-pink-600 text-white shadow-md scale-[1.05]"
+                        ? "bg-pink-600 text-white shadow-md "
                         : "bg-transparent border border-pink-400/50 text-pink-400 hover:bg-pink-500/10"
                     } ${submitting ? "opacity-60 cursor-not-allowed" : ""}`}
                   >
@@ -318,7 +318,7 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
                 {mode === "flights" && (
                   <>
                     {/* Trip Type */}
-                    <div className="flex justify-center gap-3 mb-3">
+                    <div className="flex justify-center gap-2 mb-2">
                       <button
                         type="button"
                         disabled={submitting}
@@ -453,9 +453,9 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
 
                       {showCityDropdown && filteredCities.length > 0 && (
                         <ul className="absolute left-0 right-0 mt-2 glass rounded-xl shadow-lg overflow-hidden z-[9999] max-h-56 overflow-y-auto backdrop-blur-lg scrollbar-hide">
-                          {filteredCities.map((city) => (
+                          {filteredCities.map((city, idx) => (
                             <li
-                              key={city}
+                              key={`${city}-${idx}`}
                               onClick={() => {
                                 if (submitting) return;
                                 setSelectedCity(city);
@@ -496,21 +496,25 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
 
                     <div>
                       <label className="text-xs text-gray-300 mb-1 block">Guests</label>
-                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30">
+                      <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-white/10 border border-gray-500/30">
                         <button
                           type="button"
                           disabled={submitting}
                           onClick={() => setGuests(Math.max(1, guests - 1))}
-                          className="px-3 py-1 text-gray-300 hover:text-white text-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                          className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-white text-base disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           −
                         </button>
-                        <span className="text-gray-100 font-semibold">{guests}</span>
+
+                        <span className="text-gray-100 text-sm font-medium">
+                          {guests}
+                        </span>
+
                         <button
                           type="button"
                           disabled={submitting}
                           onClick={() => setGuests(guests + 1)}
-                          className="px-3 py-1 text-gray-300 hover:text-white text-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                          className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-white text-base disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           +
                         </button>

@@ -9,12 +9,7 @@ type Country = {
   lon: number;
 };
 
-export default function SearchBar() {
-  const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<Country[]>([]);
-  const [allCountries, setAllCountries] = useState<Country[]>([]);
-  const [isClient, setIsClient] = useState(false);
-const blacklist = new Set([
+const COUNTRY_BLACKLIST = new Set<string>([
   // Europe / microstates / dependencies
   "Isle of Man", "Guernsey", "Jersey", "Gibraltar", "Svalbard", "Åland",
   "Liechtenstein", "San Marino", "Andorra", "Monaco", "Vatican",
@@ -47,6 +42,12 @@ const blacklist = new Set([
   "Christmas Island", "Cocos (Keeling) Islands", "Easter Island"
 ]);
 
+export default function SearchBar() {
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<Country[]>([]);
+  const [allCountries, setAllCountries] = useState<Country[]>([]);
+  const [isClient, setIsClient] = useState(false);
+
   useEffect(() => setIsClient(true), []);
 
 
@@ -60,7 +61,7 @@ useEffect(() => {
             name &&
             f.properties?.label_y &&
             f.properties?.label_x &&
-            !blacklist.has(name)
+            !COUNTRY_BLACKLIST.has(name)
           );
         })
         .map((f: any) => ({
