@@ -135,8 +135,12 @@ function Navbar({
           </button>
         ) : (
           <>
-            <button className="hidden sm:inline text-sm font-medium text-slate-300 hover:text-sky-400 transition-colors">
-              Explore
+            <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("open-ai-explore"))}
+            className="hidden sm:inline text-sm font-medium text-slate-300 hover:text-sky-400 transition-colors"
+            >
+            Explore
             </button>
             <button
               onClick={onFlightsClick}

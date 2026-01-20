@@ -414,6 +414,21 @@ export default function Globe() {
 
   const [panelVisible, setPanelVisible] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"info" | "social">("info");
+  const [expandedPanel, setExpandedPanel] = useState<"info" | "social" | null>(null);
+  const [aiExploreOpen, setAiExploreOpen] = useState(false);
+
+  useEffect(() => {
+  const openExplore = () => {
+    setAiExploreOpen(true);
+    setExpandedPanel("social");
+    setPanelVisible(true);
+    setMobilePanel("social");
+  };
+
+  window.addEventListener("open-ai-explore", openExplore);
+  return () => window.removeEventListener("open-ai-explore", openExplore);
+}, []);
+
 
   async function preloadCountryImages(name: string) {
     if (imageCache.has(name)) {
@@ -487,82 +502,120 @@ export default function Globe() {
         />
       </Canvas>
 
-      {panelVisible && selectedCountry && (
-        <>
-          <SocialPanel
-            open={true}
-            selectedCountry={selectedCountry}
-            onClose={() => setSelectedCountry(null)}
-            onCreateTrip={() => setCreateTripOpen(true)}
-            refreshKey={tripsRefreshKey}
-            slideFrom="left"
-            className="hidden lg:block left-0"
-          />
-          <CreateTripModal
-            open={createTripOpen}
-            countryCode={selectedCountry}
-            onClose={() => setCreateTripOpen(false)}
-            onCreated={() => setTripsRefreshKey((k) => k + 1)}
-          />
+      {panelVisible && (selectedCountry || aiExploreOpen) && (
+  <>
+    {/* LEFT: Social / AI panel */}
+    <SocialPanel
+      open={true}
+      selectedCountry={selectedCountry}
+      onClose={() => {
+        setAiExploreOpen(false);
+        setExpandedPanel(null);
+        setSelectedCountry(null);
+      }}
+      onCreateTrip={() => setCreateTripOpen(true)}
+      refreshKey={tripsRefreshKey}
+      slideFrom="left"
+      className={[
+        "hidden lg:block left-0",
+        expandedPanel === "info" ? "hidden" : "",
+      ].join(" ")}
+      initialViewMode={aiExploreOpen ? "ai" : "community"}
+      aiIntent={aiExploreOpen ? "explore" : "country"}
+      expanded={expandedPanel === "social"}
+      onToggleExpanded={() =>
+        setExpandedPanel((p) => (p === "social" ? null : "social"))
+      }
+    />
 
-          <div className="hidden lg:block">
-            <CountryInfoPanel
-              key={selectedCountry.replace(/\s+/g, "-").toLowerCase()}
-              selected={selectedCountry}
-              onClose={() => setSelectedCountry(null)}
-              preloadedImages={preloadedImages}
-            />
-          </div>
+    <CreateTripModal
+      open={createTripOpen}
+      countryCode={selectedCountry ?? ""}
+      onClose={() => setCreateTripOpen(false)}
+      onCreated={() => setTripsRefreshKey((k) => k + 1)}
+    />
 
-          <div className="lg:hidden">
-            {mobilePanel === "info" ? (
-              <CountryInfoPanel
-                key={selectedCountry.replace(/\s+/g, "-").toLowerCase()}
-                selected={selectedCountry}
-                onClose={() => setSelectedCountry(null)}
-                preloadedImages={preloadedImages}
-              />
-            ) : (
-              <SocialPanel
-                open={true}
-                selectedCountry={selectedCountry}
-                onClose={() => setSelectedCountry(null)}
-                onCreateTrip={() => setCreateTripOpen(true)}
-                refreshKey={tripsRefreshKey}
-                className="left-0 right-auto"
-                slideFrom="left"
-              />
-            )}
-            
-            <div className="fixed bottom-4 inset-x-0 flex justify-center z-50">
-              <div className="inline-flex rounded-full bg-slate-900/85 border border-white/15 shadow-lg shadow-black/60 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setMobilePanel("info")}
-                  className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
-                    mobilePanel === "info"
-                      ? "bg-sky-500 text-white"
-                      : "text-slate-200 hover:bg-white/5"
-                  }`}
-                >
-                  Info
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMobilePanel("social")}
-                  className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
-                    mobilePanel === "social"
-                      ? "bg-pink-500 text-white"
-                      : "text-slate-200 hover:bg-white/5"
-                  }`}
-                >
-                  Social
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
+    {/* RIGHT: Info panel (only when a country is selected) */}
+    <div
+      className={[
+        "hidden lg:block",
+        expandedPanel === "social" ? "hidden" : "",
+      ].join(" ")}
+    >
+      <CountryInfoPanel
+        key={(selectedCountry ?? "none").replace(/\s+/g, "-").toLowerCase()}
+        selected={selectedCountry}
+        onClose={() => {
+          setExpandedPanel(null);
+          setSelectedCountry(null);
+        }}
+        preloadedImages={preloadedImages}
+        expanded={expandedPanel === "info"}
+        onToggleExpanded={() =>
+          setExpandedPanel((p) => (p === "info" ? null : "info"))
+        }
+      />
+    </div>
+
+    {/* MOBILE */}
+    <div className="lg:hidden">
+      {mobilePanel === "info" ? (
+        <CountryInfoPanel
+          key={(selectedCountry ?? "none").replace(/\s+/g, "-").toLowerCase()}
+          selected={selectedCountry}
+          onClose={() => {
+            setAiExploreOpen(false);
+            setSelectedCountry(null);
+          }}
+          preloadedImages={preloadedImages}
+        />
+      ) : (
+        <SocialPanel
+          open={true}
+          selectedCountry={selectedCountry}
+          onClose={() => {
+            setAiExploreOpen(false);
+            setSelectedCountry(null);
+          }}
+          onCreateTrip={() => setCreateTripOpen(true)}
+          refreshKey={tripsRefreshKey}
+          className="left-0 right-auto"
+          slideFrom="left"
+          initialViewMode={aiExploreOpen ? "ai" : "community"}
+          aiIntent={aiExploreOpen ? "explore" : "country"}
+        />
       )}
+
+      <div className="fixed bottom-4 inset-x-0 flex justify-center z-50">
+        <div className="inline-flex rounded-full bg-slate-900/85 border border-white/15 shadow-lg shadow-black/60 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setMobilePanel("info")}
+            className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
+              mobilePanel === "info"
+                ? "bg-sky-500 text-white"
+                : "text-slate-200 hover:bg-white/5"
+            }`}
+          >
+            Info
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobilePanel("social")}
+            className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
+              mobilePanel === "social"
+                ? "bg-pink-500 text-white"
+                : "text-slate-200 hover:bg-white/5"
+            }`}
+          >
+            Social
+          </button>
+        </div>
+      </div>
+    </div>
+  </>
+)}
+
     </div>
   );
 }

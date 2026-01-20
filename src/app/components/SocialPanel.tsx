@@ -29,6 +29,10 @@ type SocialPanelProps = {
   className?: string;
   slideFrom?: "left" | "right";
   refreshKey?: number;
+  initialViewMode?: "community" | "ai";
+  aiIntent?: "country" | "explore";
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 };
 
 function formatDate(ts?: { seconds: number; nanoseconds: number }) {
@@ -48,10 +52,53 @@ export default function SocialPanel({
   className = "",
   slideFrom = "left",
   refreshKey = 0,
+  initialViewMode = "community",
+  aiIntent = "country",
+  expanded = false,
+  onToggleExpanded,
 }: SocialPanelProps) {
   const { user } = useAuth();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(false);
+
+  type ViewMode = "community" | "ai";
+type ChatMsg = { role: "user" | "assistant"; content: string };
+
+const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
+const [chat, setChat] = useState<ChatMsg[]>(
+  initialViewMode === "ai"
+    ? [
+        {
+          role: "assistant",
+          content:
+            aiIntent === "explore"
+              ? "Tell me what kind of trip you want (dates, budget, vibe, weather, who you’re travelling with). I’ll suggest a few countries."
+              : `Ask me anything about travelling in ${selectedCountry ?? "this country"}.`,
+        },
+      ]
+    : []
+);
+const [aiInput, setAiInput] = useState("");
+const [aiLoading, setAiLoading] = useState(false);
+
+useEffect(() => {
+  setViewMode(initialViewMode);
+  if (initialViewMode === "ai") {
+    setChat([
+      {
+        role: "assistant",
+        content:
+          aiIntent === "explore"
+            ? "Tell me what kind of trip you want (dates, budget, vibe, weather, who you’re travelling with). I’ll suggest a few countries."
+            : `Ask me anything about travelling in ${selectedCountry ?? "this country"}.`,
+      },
+    ]);
+  } else {
+    setChat([]);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [initialViewMode, aiIntent, selectedCountry]);
+
 
   const [stableCountry, setStableCountry] = useState<string | null>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -113,13 +160,68 @@ export default function SocialPanel({
     })();
   }, [open, stableCountry, refreshKey]);
 
-  if (!selectedCountry) return null;
-
   const hasTrips = trips.length > 0;
+
+  const sendToAI = async () => {
+  const prompt = aiInput.trim();
+  if (!prompt || aiLoading) return;
+
+  const nextChat: ChatMsg[] = [...chat, { role: "user", content: prompt }];
+  setChat(nextChat);
+  setAiInput("");
+  setAiLoading(true);
+
+  try {
+    const endpoint = aiIntent === "explore" ? "/api/ai/explore" : "/api/ai/travel";
+
+const payload =
+  aiIntent === "explore"
+    ? {
+        messages: nextChat,
+      }
+    : {
+        country: selectedCountry,
+        posts: trips.slice(0, 8).map((t) => ({
+          title: t.title,
+          cityName: t.cityName,
+          body: t.body,
+        })),
+        messages: nextChat,
+      };
+
+if (aiIntent !== "explore" && !selectedCountry) {
+  setChat((prev) => [
+    ...prev,
+    { role: "assistant", content: "Pick a country first, or use Explore mode to get country suggestions." },
+  ]);
+  return;
+}
+
+const res = await fetch(endpoint, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(payload),
+});
+
+
+    if (!res.ok) throw new Error(`AI request failed: ${res.status}`);
+    const data = await res.json();
+
+    setChat((prev) => [...prev, { role: "assistant", content: data.answer ?? "Sorry — no answer." }]);
+  } catch (e) {
+    console.error(e);
+    setChat((prev) => [
+      ...prev,
+      { role: "assistant", content: "Sorry — I couldn’t generate a response right now." },
+    ]);
+  } finally {
+    setAiLoading(false);
+  }
+};
 
 return (
   <AnimatePresence>
-    {open && selectedCountry && (
+    {open && (selectedCountry || aiIntent === "explore") && (
       <>
         {/* Mobile overlay */}
         <motion.div
@@ -138,7 +240,9 @@ return (
           exit={{ x: "-100%" }}
           transition={{ type: "spring", stiffness: 90, damping: 14 }}
           className={[
-            "fixed left-0 top-0 z-50 h-full w-full sm:w-[440px] lg:top-[70px] lg:h-[calc(100vh-70px)]",
+            "fixed left-0 top-0 z-50 w-full",
+            "h-full lg:top-[70px] lg:h-[calc(100vh-70px)]",
+            expanded ? "lg:w-screen" : "sm:w-[440px]",
             "backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40",
             "dark:from-zinc-900/70 dark:to-black/60",
             "border-r border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.4)]",
@@ -158,27 +262,64 @@ return (
 
             {/* Header title row */}
             <div className="pt-6 pb-3 px-6 border-b border-white/10">
-              <h2 className="text-lg font-semibold text-white/90">Community</h2>
+              <div className="flex items-center">
+                <h2 className="text-lg font-semibold text-white/90">
+                  {viewMode === "community" ? "Community" : "Ask"}
+                </h2>
+
+                <div className="ml-auto mr-10 flex items-center rounded-full border border-white/10 bg-white/5 p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("community")}
+                  className={[
+                    "px-3 py-1 rounded-full text-xs font-semibold transition",
+                    viewMode === "community"
+                      ? "bg-white/15 text-white"
+                      : "text-white/70 hover:text-white",
+                  ].join(" ")}
+                >
+                  Community
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewMode("ai")}
+                  className={[
+                    "px-3 py-1 rounded-full text-xs font-semibold transition",
+                    viewMode === "ai"
+                      ? "bg-white/15 text-white"
+                      : "text-white/70 hover:text-white",
+                  ].join(" ")}
+                >
+                  Ask AI
+                </button>
+              </div>
             </div>
+          </div>
 
             {/* Share bar */}
+            {viewMode === "community" && (
             <div className="px-6 pt-4 pb-4 border-b border-white/10">
-              {user ? (
-                <button
-                  onClick={onCreateTrip}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-xs font-semibold text-white shadow-md shadow-sky-500/40 transition-colors"
-                >
-                  <span>Share a trip</span>
-                </button>
-              ) : (
-                <p className="text-[11px] text-slate-300">
-                  Log in to share your trips in{" "}
-                  <span className="font-semibold text-sky-300">{selectedCountry}</span>.
-                </p>
-              )}
+              <div className="px-6 pt-4 pb-4 border-b border-white/10">
+                {user ? (
+                  <button
+                    onClick={onCreateTrip}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-xs font-semibold text-white shadow-md shadow-sky-500/40 transition-colors"
+                  >
+                    <span>Share a trip</span>
+                  </button>
+                ) : (
+                  <p className="text-[11px] text-slate-300">
+                    Log in to share your trips in{" "}
+                    <span className="font-semibold text-sky-300">{selectedCountry}</span>.
+                  </p>
+                )}
+              </div>
             </div>
+            )}
 
             {/* Feed */}
+            {viewMode === "community" ? (
             <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {loading && (
                 <div className="space-y-3">
@@ -252,6 +393,67 @@ return (
                   </article>
                 ))}
             </div>
+              ):(
+              <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Chat scroll area */}
+              <div className="flex-1 px-6 py-5 space-y-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {chat.length === 0 && (
+                  <div className="text-[12px] text-slate-300/90 leading-relaxed">
+                    Ask about <span className="font-semibold text-white/90">{selectedCountry}</span>:
+                    itinerary ideas, best cities, safety, budgets, seasons, what to avoid — and I’ll use recent posts
+                    as extra context when available.
+                  </div>
+                )}
+
+                {chat.map((m, idx) => (
+                  <div
+                    key={idx}
+                    className={[
+                      "max-w-[92%] rounded-2xl px-4 py-3 text-[12px] leading-relaxed border",
+                      m.role === "user"
+                        ? "ml-auto bg-sky-500/15 border-sky-400/20 text-slate-100"
+                        : "mr-auto bg-white/5 border-white/10 text-slate-100",
+                    ].join(" ")}
+                  >
+                    {m.content}
+                  </div>
+                ))}
+
+                {aiLoading && (
+                  <div className="mr-auto max-w-[92%] rounded-2xl px-4 py-3 text-[12px] border bg-white/5 border-white/10 text-slate-200">
+                    Thinking…
+                  </div>
+                )}
+              </div>
+
+              {/* Input row */}
+              <div className="px-6 py-4 border-t border-white/10">
+                <div className="flex items-center gap-2">
+                  <input
+                    value={aiInput}
+                    onChange={(e) => setAiInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") sendToAI();
+                    }}
+                    placeholder={
+                      aiIntent === "explore"
+                        ? "Tell me what you want from a trip…"
+                        : `Ask about ${selectedCountry ?? "this country"}...`
+                    }
+                    className="flex-1 bg-white/5 border border-white/10 rounded-full px-4 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+                    disabled={aiLoading}
+                  />
+                  <button
+                    onClick={sendToAI}
+                    disabled={aiLoading || !aiInput.trim()}
+                    className="px-4 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           </div>
         </motion.aside>
       </>

@@ -17,12 +17,21 @@ type Props = {
   selected: string | null;
   onClose: () => void;
   preloadedImages?: string[];
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 };
 
 const imageCache = new Map<string, string[]>();
-const defaultImages = ["/fallbacks/landscape.jpg", "/fallbacks/mountain.jpg"];
+const defaultImages = ["/logo.png"];
 
-export default function CountryInfoPanel({ selected, onClose, preloadedImages }: Props) {
+export default function CountryInfoPanel({
+  selected,
+  onClose,
+  preloadedImages,
+  expanded = false,
+  onToggleExpanded,
+}: Props) {
+
   const [images, setImages] = useState<string[]>(preloadedImages ?? defaultImages);
   const [mainImage, setMainImage] = useState<string | null>(preloadedImages?.[0] ?? defaultImages[0]);
   const [loading, setLoading] = useState(false);
@@ -226,7 +235,13 @@ export default function CountryInfoPanel({ selected, onClose, preloadedImages }:
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 90, damping: 14 }}
-            className="fixed right-0 top-0 z-50 h-full w-full sm:w-[440px] lg:top-[70px] lg:h-[calc(100vh-70px)] backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40 dark:from-zinc-900/70 dark:to-black/60 border-l border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.4)] overflow-y-auto"
+            className={[
+              "fixed right-0 top-0 z-50 h-full w-full",
+              expanded ? "lg:w-[min(960px,100vw)]" : "sm:w-[440px]",
+              "lg:top-[70px] lg:h-[calc(100vh-70px)]",
+              "backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40 dark:from-zinc-900/70 dark:to-black/60",
+              "border-l border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.4)] overflow-y-auto",
+            ].join(" ")}
           >
             <div className="relative h-full flex flex-col">
               <button
