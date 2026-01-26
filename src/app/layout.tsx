@@ -9,9 +9,9 @@ import SearchBar from "./components/SearchBar";
 import LogoIntro from "./components/LogoIntro";
 import FlightSearchPanel from "./components/FlightSearchPanel";
 import HotelsSearch from "./components/HotelsSearch";
-import { useState, createContext } from "react";
+import { useState, createContext, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Globe, SlidersHorizontal } from "lucide-react";
+import { Globe, SlidersHorizontal, MoreVertical } from "lucide-react";
 import { AuthProvider, useAuth } from "./components/AuthProvider";
 import { signOut } from "firebase/auth";
 import { auth } from "./lib/firebase";
@@ -48,6 +48,29 @@ function Navbar({
   const checkIn = sp.get("checkIn") || "";
   const checkOut = sp.get("checkOut") || "";
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!mobileMenuRef.current) return;
+      if (!mobileMenuRef.current.contains(e.target as Node)) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileMenuOpen(false);
+    };
+
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -73,12 +96,13 @@ function Navbar({
             : "0 0 20px rgba(0,0,0,0.05)",
         } as React.CSSProperties
       }
-      className={`fixed top-0 left-0 w-full z-50 flex items-center justify-between
-      px-8 py-3 h-[var(--nav-height)] backdrop-blur-[40px] border-b transition-all duration-300
-      ${isDark ? "text-gray-100" : "text-slate-800"}`}
+      className={`fixed top-0 left-0 w-full z-50 relative flex flex-wrap items-center justify-between
+        px-4 md:px-8 py-3 h-auto md:h-[var(--nav-height)]
+        backdrop-blur-[40px] border-b transition-all duration-300
+        ${isDark ? "text-gray-100" : "text-slate-800"}`}
     >
       {/* LEFT SECTION */}
-      <div className="flex items-center gap-4 select-none">
+      <div className="order-1 flex items-center gap-3 select-none">
         <div
           className="flex items-center cursor-pointer"
           onClick={() => router.push("/")}
@@ -108,23 +132,34 @@ function Navbar({
       </div>
 
       {/* CENTER SECTION */}
-      <div className="flex-1 flex justify-center">
-        {isHotelResults ? (
-          <h2 className="text-center text-sm sm:text-base font-semibold text-white/90">
-            🏨 Stays in <span className="text-pink-400">{city}</span>{" "}
-            <span className="text-white/60 text-xs">
-              ({checkIn} → {checkOut})
-            </span>
-          </h2>
-        ) : (
-          <div className="w-full max-w-md">
-            <SearchBar />
-          </div>
-        )}
+      <div
+        className="
+          order-3 w-full mt-2
+          md:order-none md:mt-0
+          md:absolute md:left-1/2 md:-translate-x-1/2
+          md:w-[min(860px,36vw)]
+        "
+      >
+        <div className="w-full px-1">
+          {isHotelResults ? (
+            <h2 className="text-center text-sm sm:text-base font-semibold text-white/90">
+              🏨 Stays in <span className="text-pink-400">{city}</span>{" "}
+              <span className="text-white/60 text-xs">
+                ({checkIn} → {checkOut})
+              </span>
+            </h2>
+          ) : (
+            <div className="w-full [&_.fade-in]:!max-w-full">
+              <SearchBar />
+            </div>
+          )}
+        </div>
       </div>
 
+
+
       {/* RIGHT SECTION */}
-      <div className="flex items-center gap-4">
+      <div className="order-2 flex items-center gap-3">
         {isHotelResults ? (
           <button
             onClick={onToggleFilters}
@@ -135,25 +170,73 @@ function Navbar({
           </button>
         ) : (
           <>
+            {/* Desktop links */}
             <button
-            type="button"
-            onClick={() => window.dispatchEvent(new Event("open-ai-explore"))}
-            className="hidden sm:inline text-sm font-medium text-slate-300 hover:text-sky-400 transition-colors"
+              type="button"
+              onClick={() => window.dispatchEvent(new Event("open-ai-explore"))}
+              className="hidden md:inline text-sm font-medium text-slate-300 hover:text-sky-400 transition-colors"
             >
-            Explore
+              Explore
             </button>
             <button
               onClick={onFlightsClick}
-              className="hidden sm:inline text-sm font-medium text-slate-300 hover:text-sky-400 transition-colors"
+              className="hidden md:inline text-sm font-medium text-slate-300 hover:text-sky-400 transition-colors"
             >
               Flights
             </button>
             <button
               onClick={onHotelsClick}
-              className="hidden sm:inline text-sm font-medium text-slate-300 hover:text-pink-400 transition-colors"
+              className="hidden md:inline text-sm font-medium text-slate-300 hover:text-pink-400 transition-colors"
             >
               Hotels
             </button>
+            {/* Mobile 3-dots */}
+            <div className="relative md:hidden" ref={mobileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((p) => !p)}
+                className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition text-white"
+                aria-label="Open menu"
+                title="Menu"
+              >
+                <MoreVertical size={18} />
+              </button>
+
+              {mobileMenuOpen && (
+                <div className="absolute right-0 mt-2 w-44 rounded-2xl border border-white/10 bg-black/60 backdrop-blur-xl shadow-xl overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      window.dispatchEvent(new Event("open-ai-explore"));
+                    }}
+                    className="w-full text-left px-4 py-3 text-sm text-white/90 hover:bg-white/10 transition"
+                  >
+                    Explore
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onFlightsClick();
+                    }}
+                    className="w-full text-left px-4 py-3 text-sm text-white/90 hover:bg-white/10 transition"
+                  >
+                    Flights
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onHotelsClick();
+                    }}
+                    className="w-full text-left px-4 py-3 text-sm text-white/90 hover:bg-white/10 transition"
+                  >
+                    Hotels
+                  </button>
+                </div>
+              )}
+            </div>
           </>
         )}
 
@@ -161,15 +244,12 @@ function Navbar({
         {!loading && (
           <>
             {user ? (
-              <div className="flex items-center gap-2">
-                
-                <button
-                  onClick={handleLogout}
-                  className="text-xs sm:text-sm font-medium px-3 py-1 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-md shadow-sky-500/30 transition-colors"
-                >
-                  Log out
-                </button>
-              </div>
+              <button
+                onClick={handleLogout}
+                className="text-xs sm:text-sm font-medium px-3 py-1 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-md shadow-sky-500/30 transition-colors"
+              >
+                Log out
+              </button>
             ) : (
               <div className="flex items-center gap-2">
                 <button
