@@ -60,6 +60,42 @@ export default function CountryInfoPanel({
   const [guests, setGuests] = useState(2);
   const [submitting, setSubmitting] = useState(false);
 
+  const isValidCity = cities.includes(selectedCity);
+
+  const originAirport = airports.find(
+    (a) =>
+      a.iata_code.toLowerCase() === departAirport.toLowerCase() ||
+      `${a.city} (${a.iata_code})`.toLowerCase() === departAirport.toLowerCase()
+  );
+
+const todayStr = new Date().toISOString().split("T")[0];
+
+const dateError =
+  mode === "flights"
+    ? !departDate
+      ? ""
+      : tripType === "return" && returnDate && returnDate <= departDate
+      ? "Return date must be after departure."
+      : ""
+    : !checkIn || !checkOut
+    ? ""
+    : checkOut <= checkIn
+    ? "Check-out must be after check-in."
+    : "";
+  
+    const canSubmit =
+      mode === "flights"
+        ? !!originAirport &&
+          !!departDate &&
+          (tripType === "oneway" || !!returnDate) &&
+          !dateError &&
+          !submitting
+        : isValidCity &&
+          !!checkIn &&
+          !!checkOut &&
+          !dateError &&
+          !submitting;
+
   useEffect(() => {
     setSubmitting(false);
   }, [mode, selected]);
@@ -375,6 +411,12 @@ export default function CountryInfoPanel({
                         />
                       </div>
 
+                      {departAirport && !originAirport && (
+                        <p className="text-[11px] text-amber-300 mt-1">
+                          Please select a valid airport.
+                        </p>
+                      )}
+
                       {showAirportDropdown && filteredAirports.length > 0 && (
                         <ul className="absolute left-0 right-0 mt-2 glass rounded-xl shadow-lg overflow-hidden z-[9999] max-h-56 overflow-y-auto backdrop-blur-lg scrollbar-hide">
                           {filteredAirports.map((a) => (
@@ -403,8 +445,14 @@ export default function CountryInfoPanel({
                         <label className="text-xs text-gray-300 mb-1 block">Departure Date</label>
                         <input
                           type="date"
+                          min={todayStr}
                           value={departDate}
-                          onChange={(e) => handleDateChange("depart", e.target.value)}
+                          onChange={(e) => {
+                            setDepartDate(e.target.value);
+                            if (tripType === "return" && returnDate && returnDate <= e.target.value) {
+                              setReturnDate("");
+                            }
+                          }}
                           disabled={submitting}
                           className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none disabled:opacity-60"
                         />
@@ -414,9 +462,10 @@ export default function CountryInfoPanel({
                           <label className="text-xs text-gray-300 mb-1 block">Return Date</label>
                           <input
                             type="date"
+                            min={departDate || todayStr}
                             value={returnDate}
-                            onChange={(e) => handleDateChange("return", e.target.value)}
-                            disabled={submitting}
+                            onChange={(e) => setReturnDate(e.target.value)}
+                            disabled={submitting || !departDate}
                             className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none disabled:opacity-60"
                           />
                         </div>
@@ -466,13 +515,19 @@ export default function CountryInfoPanel({
                         />
                       </div>
 
+                      {selectedCity && !isValidCity && (
+                      <p className="text-[11px] text-amber-300 mt-1">
+                        Please select a city from the list.
+                      </p>
+                    )}
+
                       {showCityDropdown && filteredCities.length > 0 && (
                         <ul className="absolute left-0 right-0 mt-2 glass rounded-xl shadow-lg overflow-hidden z-[9999] max-h-56 overflow-y-auto backdrop-blur-lg scrollbar-hide">
                           {filteredCities.map((city, idx) => (
                             <li
                               key={`${city}-${idx}`}
                               onClick={() => {
-                                if (submitting) return;
+                                if (!canSubmit) return;
                                 setSelectedCity(city);
                                 setShowCityDropdown(false);
                               }}
@@ -491,6 +546,7 @@ export default function CountryInfoPanel({
                         <label className="text-xs text-gray-300 mb-1 block">Check-in</label>
                         <input
                           type="date"
+                          min={todayStr}
                           value={checkIn}
                           onChange={(e) => setCheckIn(e.target.value)}
                           disabled={submitting}
@@ -501,6 +557,7 @@ export default function CountryInfoPanel({
                         <label className="text-xs text-gray-300 mb-1 block">Check-out</label>
                         <input
                           type="date"
+                          min={checkIn || todayStr}
                           value={checkOut}
                           onChange={(e) => setCheckOut(e.target.value)}
                           disabled={submitting}

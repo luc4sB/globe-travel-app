@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -43,30 +43,55 @@ export default function FlightSearchPanel({ onClose }: { onClose: () => void }) 
     setFiltered(res.slice(0, 8));
   };
 
-  const handleSearch = () => {
-    const origin = airports.find(
-      (a) =>
-        a.iata_code.toLowerCase() === from.toLowerCase() ||
-        `${a.city} (${a.iata_code})`.toLowerCase() === from.toLowerCase()
+  const origin = useMemo(() => {
+    const v = from.trim().toLowerCase();
+    if (!v) return null;
+    return (
+      airports.find((a) => a.iata_code.toLowerCase() === v) ||
+      airports.find((a) => `${a.city} (${a.iata_code})`.toLowerCase() === v) ||
+      null
     );
-    const destination = airports.find(
-      (a) =>
-        a.iata_code.toLowerCase() === to.toLowerCase() ||
-        `${a.city} (${a.iata_code})`.toLowerCase() === to.toLowerCase()
-    );
+  }, [airports, from]);
 
-    if (!origin || !destination) {
-      alert("Please select valid airports for both fields.");
-      return;
+  const destination = useMemo(() => {
+    const v = to.trim().toLowerCase();
+    if (!v) return null;
+    return (
+      airports.find((a) => a.iata_code.toLowerCase() === v) ||
+      airports.find((a) => `${a.city} (${a.iata_code})`.toLowerCase() === v) ||
+      null
+    );
+  }, [airports, to]);
+
+  const dateError = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (!departDate) return "";
+
+    const d = new Date(departDate);
+    if (d < today) return "Depart date cannot be in the past.";
+
+    if (tripType === "return") {
+      if (!returnDate) return "";
+      const r = new Date(returnDate);
+      if (r <= d) return "Return date must be after depart date.";
     }
-    if (!departDate) {
-      alert("Please select a departure date.");
-      return;
-    }
-    if (tripType === "return" && !returnDate) {
-      alert("Please select a return date.");
-      return;
-    }
+
+    return "";
+  }, [departDate, returnDate, tripType]);
+
+  const canSearch = useMemo(() => {
+    if (!origin || !destination) return false;
+    if (origin.iata_code === destination.iata_code) return false;
+    if (!departDate) return false;
+    if (tripType === "return" && !returnDate) return false;
+    if (dateError) return false;
+    return true;
+  }, [origin, destination, departDate, returnDate, tripType, dateError]);
+
+  const handleSearch = () => {
+    if (!canSearch || !origin || !destination) return;
 
     const params = new URLSearchParams({
       origin: origin.iata_code,
@@ -75,9 +100,12 @@ export default function FlightSearchPanel({ onClose }: { onClose: () => void }) 
       tripType,
       ...(tripType === "return" && { returnDate }),
     });
-    router.push(`/flights/results?${params}`);
+
+    router.push(`/flights/results?${params.toString()}`);
     onClose();
   };
+
+  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
 
   return (
     <AnimatePresence>
@@ -96,8 +124,8 @@ export default function FlightSearchPanel({ onClose }: { onClose: () => void }) 
           onClick={(e) => e.stopPropagation()}
           className="relative w-[90%] sm:w-[800px] rounded-3xl p-6 glass bg-white/10 dark:bg-zinc-900/70 border border-white/20 backdrop-blur-2xl shadow-2xl"
         >
-          {/* Close */}
           <button
+            type="button"
             onClick={onClose}
             className="absolute top-3 right-3 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
           >
@@ -108,10 +136,13 @@ export default function FlightSearchPanel({ onClose }: { onClose: () => void }) 
             Search Flights
           </h2>
 
-          {/* Trip type */}
           <div className="flex justify-center gap-3 mb-4">
             <button
-              onClick={() => setTripType("oneway")}
+              type="button"
+              onClick={() => {
+                setTripType("oneway");
+                setReturnDate("");
+              }}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
                 tripType === "oneway"
                   ? "bg-sky-500 text-white"
@@ -121,6 +152,7 @@ export default function FlightSearchPanel({ onClose }: { onClose: () => void }) 
               One Way
             </button>
             <button
+              type="button"
               onClick={() => setTripType("return")}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
                 tripType === "return"
@@ -132,16 +164,15 @@ export default function FlightSearchPanel({ onClose }: { onClose: () => void }) 
             </button>
           </div>
 
-          {/* Input fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-            {/* From */}
             <div className="relative">
               <label className="text-xs text-gray-300 mb-1 block">From</label>
               <input
                 value={from}
                 onChange={(e) => {
-                  setFrom(e.target.value);
-                  filterAirports(e.target.value, setFilteredFrom);
+                  const v = e.target.value;
+                  setFrom(v);
+                  filterAirports(v, setFilteredFrom);
                 }}
                 onFocus={() => setShowFrom(true)}
                 onBlur={() => setTimeout(() => setShowFrom(false), 200)}
@@ -162,21 +193,28 @@ export default function FlightSearchPanel({ onClose }: { onClose: () => void }) 
                       <span>
                         {a.city} — {a.name}
                       </span>
-                      <span className="text-xs text-sky-400 font-mono">{a.iata_code}</span>
+                      <span className="text-xs text-sky-400 font-mono">
+                        {a.iata_code}
+                      </span>
                     </li>
                   ))}
                 </ul>
               )}
+              {from && !origin && (
+                <p className="text-[11px] text-amber-300 mt-1">
+                  Please select an airport from the list.
+                </p>
+              )}
             </div>
 
-            {/* To */}
             <div className="relative">
               <label className="text-xs text-gray-300 mb-1 block">To</label>
               <input
                 value={to}
                 onChange={(e) => {
-                  setTo(e.target.value);
-                  filterAirports(e.target.value, setFilteredTo);
+                  const v = e.target.value;
+                  setTo(v);
+                  filterAirports(v, setFilteredTo);
                 }}
                 onFocus={() => setShowTo(true)}
                 onBlur={() => setTimeout(() => setShowTo(false), 200)}
@@ -197,22 +235,40 @@ export default function FlightSearchPanel({ onClose }: { onClose: () => void }) 
                       <span>
                         {a.city} — {a.name}
                       </span>
-                      <span className="text-xs text-sky-400 font-mono">{a.iata_code}</span>
+                      <span className="text-xs text-sky-400 font-mono">
+                        {a.iata_code}
+                      </span>
                     </li>
                   ))}
                 </ul>
               )}
+              {to && !destination && (
+                <p className="text-[11px] text-amber-300 mt-1">
+                  Please select an airport from the list.
+                </p>
+              )}
+              {origin && destination && origin.iata_code === destination.iata_code && (
+                <p className="text-[11px] text-amber-300 mt-1">
+                  Origin and destination must be different.
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div>
               <label className="text-xs text-gray-300 mb-1 block">Depart</label>
               <input
                 type="date"
+                min={todayStr}
                 value={departDate}
-                onChange={(e) => setDepartDate(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setDepartDate(v);
+                  if (tripType === "return" && returnDate && v && returnDate <= v) {
+                    setReturnDate("");
+                  }
+                }}
                 className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none"
               />
             </div>
@@ -221,6 +277,7 @@ export default function FlightSearchPanel({ onClose }: { onClose: () => void }) 
                 <label className="text-xs text-gray-300 mb-1 block">Return</label>
                 <input
                   type="date"
+                  min={departDate || todayStr}
                   value={returnDate}
                   onChange={(e) => setReturnDate(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg bg-white/10 border border-gray-500/30 text-gray-100 text-sm focus:ring-2 focus:ring-sky-400 outline-none"
@@ -229,9 +286,13 @@ export default function FlightSearchPanel({ onClose }: { onClose: () => void }) 
             )}
           </div>
 
+          {dateError && <p className="text-[12px] text-amber-300 mb-3">{dateError}</p>}
+
           <button
+            type="button"
             onClick={handleSearch}
-            className="w-full bg-sky-500 hover:bg-sky-600 text-white rounded-xl py-3 font-semibold transition-all shadow-md hover:shadow-lg"
+            disabled={!canSearch}
+            className="w-full bg-sky-500 hover:bg-sky-600 text-white rounded-xl py-3 font-semibold transition-all shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
           >
             Search Flights
           </button>

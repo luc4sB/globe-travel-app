@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 export default function HotelsSearch({
   open,
@@ -23,6 +24,17 @@ export default function HotelsSearch({
   const [adults, setAdults] = useState(2);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+    const isValidCountry = useMemo(
+    () => countries.includes(country),
+    [countries, country]
+  );
+
+  const isValidCity = useMemo(
+    () => cities.includes(city),
+    [cities, city]
+  );
 
   useEffect(() => {
     if (!open) {
@@ -54,10 +66,28 @@ export default function HotelsSearch({
   }, [country]);
 
   const dateError = useMemo(() => {
-    if (checkIn && checkOut && checkOut < checkIn)
-      return "Check-out must be after check-in.";
+    if (!checkIn || !checkOut) return "";
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const inDate = new Date(checkIn);
+    const outDate = new Date(checkOut);
+
+    if (inDate < today) return "Check-in cannot be in the past.";
+    if (outDate <= inDate) return "Check-out must be after check-in.";
+
     return "";
   }, [checkIn, checkOut]);
+
+  const canSubmit = useMemo(() => {
+    return (
+      isValidCountry &&
+      isValidCity &&
+      !!checkIn &&
+      !!checkOut &&
+      !dateError &&
+      !submitting
+    );
+  }, [isValidCountry, isValidCity, checkIn, checkOut, dateError, submitting]);
 
   if (!open) return null;
 
@@ -78,7 +108,11 @@ export default function HotelsSearch({
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-white">Find Hotels</h3>
           <button
-            onClick={onClose}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
             className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition"
           >
             <X size={16} className="text-white" />
@@ -95,18 +129,25 @@ export default function HotelsSearch({
                 const val = e.target.value;
                 setCountry(val);
                 setShowCountryDropdown(true);
-                setFilteredCountries(
-                  countries.filter((c) =>
-                    c.toLowerCase().includes(val.toLowerCase())
-                  )
+                const matches = countries.filter((c) =>
+                  c.toLowerCase().includes(val.toLowerCase())
                 );
+                setFilteredCountries(matches);
+                if (!countries.includes(val)) {
+                  setCity("");
+                  setCities([]);
+                }
               }}
               onFocus={() => setShowCountryDropdown(true)}
               onBlur={() => setTimeout(() => setShowCountryDropdown(false), 150)}
               placeholder="Country"
               className="w-full rounded-xl bg-white/10 border border-white/15 text-white placeholder-white/60 py-3 px-4 focus:ring-2 focus:ring-pink-400 outline-none"
             />
-
+                        {country && !isValidCountry && (
+              <p className="text-[11px] text-amber-300 mt-1">
+                Please select a country from the list.
+              </p>
+            )}
             {showCountryDropdown && filteredCountries.length > 0 && (
               <ul className="absolute z-[80] mt-2 max-h-48 overflow-y-auto bg-black/70 backdrop-blur-md border border-white/10 rounded-xl shadow-lg text-white">
                 {filteredCountries.map((c) => (
@@ -143,10 +184,14 @@ export default function HotelsSearch({
               onFocus={() => setShowCityDropdown(true)}
               onBlur={() => setTimeout(() => setShowCityDropdown(false), 150)}
               placeholder="City"
-              disabled={!country}
+              disabled={!isValidCountry}
               className="w-full rounded-xl bg-white/10 border border-white/15 text-white placeholder-white/60 py-3 px-4 focus:ring-2 focus:ring-pink-400 outline-none disabled:opacity-40"
             />
-
+            {city && !isValidCity && (
+              <p className="text-[11px] text-amber-300 mt-1">
+                Please select a city from the list.
+              </p>
+            )}
             {showCityDropdown && filteredCities.length > 0 && (
               <ul className="absolute z-[90] mt-2 max-h-48 overflow-y-auto bg-black/70 backdrop-blur-md border border-white/10 rounded-xl shadow-lg text-white">
                 {filteredCities.map((c, i) => (
@@ -166,11 +211,12 @@ export default function HotelsSearch({
           </div>
 
           {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11px] text-white/70 mb-1">Check-in</label>
               <input
                 type="date"
+                min={new Date().toISOString().split("T")[0]}
                 value={checkIn}
                 onChange={(e) => {
                   setCheckIn(e.target.value);
@@ -183,6 +229,7 @@ export default function HotelsSearch({
               <label className="block text-[11px] text-white/70 mb-1">Check-out</label>
               <input
                 type="date"
+                min={checkIn || new Date().toISOString().split("T")[0]}
                 value={checkOut}
                 onChange={(e) => setCheckOut(e.target.value)}
                 className="w-full bg-white/10 border border-white/15 rounded-xl text-white px-3 py-2 focus:ring-2 focus:ring-pink-400 outline-none"
@@ -202,24 +249,43 @@ export default function HotelsSearch({
             />
           </div>
 
-          {/* Submit */}
-          <button
-            disabled={!city || !checkIn || !checkOut || !!dateError}
-            onClick={() => {
-              const q = new URLSearchParams({
-                country,
-                city,
-                checkIn,
-                checkOut,
-                adults: String(adults),
-              });
-              router.push(`/hotels/results?${q.toString()}`);
-              onClose();
-            }}
-            className="w-full mt-4 bg-pink-600 hover:bg-pink-700 text-white font-semibold py-3 rounded-xl shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Search
-          </button>
+            {/* Submit */}
+            <button
+              disabled={!canSubmit}
+              onClick={() => {
+                if (!canSubmit) return;
+                setSubmitting(true);
+
+                const q = new URLSearchParams({
+                  country,
+                  city,
+                  checkIn,
+                  checkOut,
+                  adults: String(adults),
+                });
+
+                router.push(`/hotels/results?${q.toString()}`);
+                onClose();
+              }}
+              className="
+                w-full mt-4 rounded-xl py-3 font-semibold
+                transition-all
+                disabled:cursor-not-allowed disabled:opacity-70
+                bg-gradient-to-r from-pink-500 to-pink-600
+                hover:from-pink-400 hover:to-pink-600
+                shadow-md hover:shadow-lg
+                text-white
+              "
+            >
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 flex items-center justify-center">
+                  {submitting && <Loader2 className="animate-spin" size={16} />}
+                </span>
+                <span className="leading-none">
+                  {submitting ? "Searching hotels…" : "Find Hotels"}
+                </span>
+              </span>
+            </button>
 
           {dateError && (
             <p className="text-[12px] text-amber-300 mt-1">{dateError}</p>
