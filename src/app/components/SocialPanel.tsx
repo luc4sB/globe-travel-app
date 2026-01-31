@@ -2,11 +2,24 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { collection, getDocs, limit, orderBy, query, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "./AuthProvider";
 import { AnimatePresence, motion } from "framer-motion";
-import { X } from "lucide-react";
+import { X, Heart } from "lucide-react";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  increment,
+  limit,
+  orderBy,
+  query,
+  runTransaction,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
 
 
 type Trip = {
@@ -19,6 +32,9 @@ type Trip = {
   imageUrl?: string;
   imagePath?: string;
   createdAt?: { seconds: number; nanoseconds: number };
+  likeCount?: number;
+  commentCount?: number;
+  shareCount?: number;
 };
 
 type SocialPanelProps = {
@@ -60,6 +76,9 @@ export default function SocialPanel({
   const { user } = useAuth();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const [likedByMe, setLikedByMe] = useState<Record<string, boolean>>({});
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
 
   type ViewMode = "community" | "ai";
 type ChatMsg = { role: "user" | "assistant"; content: string };
@@ -160,6 +179,46 @@ useEffect(() => {
     })();
   }, [open, stableCountry, refreshKey]);
 
+  useEffect(() => {
+    // initialize counts from the trip docs
+    const counts: Record<string, number> = {};
+    for (const t of trips) counts[t.id] = typeof t.likeCount === "number" ? t.likeCount : 0;
+    setLikeCounts(counts);
+
+    // if logged out, clear "liked" state
+    if (!user) {
+      setLikedByMe({});
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const entries = await Promise.all(
+          trips.map(async (t) => {
+            const likeRef = doc(db, "trips", t.id, "likes", user.uid);
+            const snap = await getDoc(likeRef);
+            return [t.id, snap.exists()] as const;
+          })
+        );
+
+        if (cancelled) return;
+
+        const likedMap: Record<string, boolean> = {};
+        for (const [tripId, exists] of entries) likedMap[tripId] = exists;
+        setLikedByMe(likedMap);
+      } catch (e) {
+        console.error("Failed to load likes:", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [trips, user]);
+
+
   const hasTrips = trips.length > 0;
 
   const sendToAI = async () => {
@@ -218,6 +277,49 @@ const res = await fetch(endpoint, {
     setAiLoading(false);
   }
 };
+
+const toggleLike = async (tripId: string) => {
+  if (!user) return;
+
+  const tripRef = doc(db, "trips", tripId);
+  const likeRef = doc(db, "trips", tripId, "likes", user.uid);
+
+  const prevLiked = !!likedByMe[tripId];
+  setLikedByMe((m) => ({ ...m, [tripId]: !prevLiked }));
+  setLikeCounts((c) => ({ ...c, [tripId]: Math.max(0, (c[tripId] ?? 0) + (prevLiked ? -1 : 1)) }));
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const [tripSnap, likeSnap] = await Promise.all([
+        tx.get(tripRef),
+        tx.get(likeRef),
+      ]);
+
+      if (!tripSnap.exists()) throw new Error("Trip does not exist");
+
+      const data = tripSnap.data() as { likeCount?: number };
+      const current = typeof data.likeCount === "number" ? data.likeCount : 0;
+
+      if (likeSnap.exists()) {
+        // unlike
+        tx.delete(likeRef);
+        tx.update(tripRef, { likeCount: Math.max(0, current - 1) });
+      } else {
+        // like
+        tx.set(likeRef, { createdAt: serverTimestamp() });
+        tx.update(tripRef, { likeCount: current + 1 });
+      }
+    });
+
+  } catch (e) {
+    console.error("toggleLike failed:", e);
+
+    // rollback optimistic update on error
+    setLikedByMe((m) => ({ ...m, [tripId]: prevLiked }));
+    setLikeCounts((c) => ({ ...c, [tripId]: Math.max(0, (c[tripId] ?? 0) + (prevLiked ? 1 : -1)) }));
+  }
+};
+
 
 return (
   <AnimatePresence>
@@ -389,6 +491,27 @@ return (
                       <p className="text-[12px] text-slate-200 leading-relaxed line-clamp-5 break-words">
                         {trip.body}
                       </p>
+
+                      {/* Actions */}
+                      <div className="mt-3 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleLike(trip.id)}
+                          disabled={!user}
+                          className={[
+                            "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold border transition",
+                            likedByMe[trip.id]
+                              ? "bg-pink-500/20 border-pink-400/30 text-pink-200"
+                              : "bg-white/5 border-white/10 text-white/75 hover:text-white hover:bg-white/10",
+                            !user ? "opacity-60 cursor-not-allowed" : "",
+                          ].join(" ")}
+                          aria-label="Like"
+                          title={user ? "Like" : "Log in to like"}
+                        >
+                          <Heart size={14} className={likedByMe[trip.id] ? "fill-current" : ""} />
+                          <span>{likeCounts[trip.id] ?? 0}</span>
+                        </button>
+                      </div>
                     </div>
                   </article>
                 ))}

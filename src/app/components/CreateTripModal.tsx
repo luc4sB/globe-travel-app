@@ -95,6 +95,10 @@ export default function CreateTripModal({ open, countryCode, onClose, onCreated 
         countryCode: countryCode.trim(),
         createdAt: serverTimestamp(),
         ...(url ? { imageUrl: url } : {}),
+        // social counters
+        likeCount: 0,
+        commentCount: 0,
+        shareCount: 0,
       });
 
       onCreated?.();
