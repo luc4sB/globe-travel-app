@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { db } from "../lib/firebase";
 import { useAuth } from "./AuthProvider";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Heart } from "lucide-react";
+import { X, Heart, MessageCircle, Share2 } from "lucide-react";
 import {
   collection,
   deleteDoc,
@@ -79,6 +79,15 @@ export default function SocialPanel({
 
   const [likedByMe, setLikedByMe] = useState<Record<string, boolean>>({});
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const [commentsOpen, setCommentsOpen] = useState<Record<string, boolean>>({});
+  const [commentsLoading, setCommentsLoading] = useState<Record<string, boolean>>({});
+  const [commentsByTrip, setCommentsByTrip] = useState<Record<string, any[]>>({});
+  const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
+
+  const [shareToast, setShareToast] = useState<Record<string, boolean>>({});
+  const [shareCounts, setShareCounts] = useState<Record<string, number>>({});
 
   type ViewMode = "community" | "ai";
 type ChatMsg = { role: "user" | "assistant"; content: string };
@@ -180,10 +189,22 @@ useEffect(() => {
   }, [open, stableCountry, refreshKey]);
 
   useEffect(() => {
-    // initialize counts from the trip docs
-    const counts: Record<string, number> = {};
-    for (const t of trips) counts[t.id] = typeof t.likeCount === "number" ? t.likeCount : 0;
-    setLikeCounts(counts);
+    // initialise counts from the trip docs
+    const like: Record<string, number> = {};
+    const comments: Record<string, number> = {};
+    const shares: Record<string, number> = {};
+
+    for (const t of trips) {
+      like[t.id] = typeof t.likeCount === "number" ? t.likeCount : 0;
+      comments[t.id] = typeof t.commentCount === "number" ? t.commentCount : 0;
+      shares[t.id] = typeof t.shareCount === "number" ? t.shareCount : 0;
+    }
+
+    setLikeCounts(like);
+    setCommentCounts(comments);
+    setShareCounts(shares);
+
+
 
     // if logged out, clear "liked" state
     if (!user) {
@@ -320,6 +341,134 @@ const toggleLike = async (tripId: string) => {
   }
 };
 
+const loadComments = async (tripId: string) => {
+  if (commentsLoading[tripId]) return;
+
+  setCommentsLoading((m) => ({ ...m, [tripId]: true }));
+
+  try {
+    const q = query(
+      collection(db, "trips", tripId, "comments"),
+      orderBy("createdAt", "desc"),
+      limit(20)
+    );
+
+    const snap = await getDocs(q);
+    const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+    setCommentsByTrip((m) => ({ ...m, [tripId]: items }));
+  } catch (e) {
+    console.error("Failed to load comments:", e);
+  } finally {
+    setCommentsLoading((m) => ({ ...m, [tripId]: false }));
+  }
+};
+
+const addComment = async (tripId: string) => {
+  if (!user) return;
+
+  const text = (commentDraft[tripId] ?? "").trim();
+  if (!text) return;
+
+  setCommentDraft((m) => ({ ...m, [tripId]: "" }));
+
+  // optimistic UI
+  const optimistic = {
+    id: `local-${Date.now()}`,
+    userId: user.uid,
+    body: text,
+    createdAt: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
+  };
+
+  setCommentsByTrip((m) => ({
+    ...m,
+    [tripId]: [optimistic, ...(m[tripId] ?? [])],
+  }));
+  setCommentCounts((c) => ({ ...c, [tripId]: (c[tripId] ?? 0) + 1 }));
+
+  const tripRef = doc(db, "trips", tripId);
+  const commentsCol = collection(db, "trips", tripId, "comments");
+  const commentRef = doc(commentsCol); // auto-id
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const tripSnap = await tx.get(tripRef);
+      if (!tripSnap.exists()) throw new Error("Trip does not exist");
+
+      const data = tripSnap.data() as { commentCount?: number };
+      const current = typeof data.commentCount === "number" ? data.commentCount : 0;
+
+      tx.set(commentRef, {
+        userId: user.uid,
+        body: text,
+        createdAt: serverTimestamp(),
+      });
+
+      tx.update(tripRef, { commentCount: current + 1 });
+    });
+
+    // refresh to replace optimistic comment timestamp/order
+    loadComments(tripId);
+  } catch (e) {
+    console.error("addComment failed:", e);
+
+    // rollback optimistic changes
+    setCommentsByTrip((m) => ({
+      ...m,
+      [tripId]: (m[tripId] ?? []).filter((x) => x.id !== optimistic.id),
+    }));
+    setCommentCounts((c) => ({ ...c, [tripId]: Math.max(0, (c[tripId] ?? 1) - 1) }));
+  }
+};
+
+const sharePost = async (tripId: string, authorUid: string) => {
+  const url =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/u/${authorUid}?post=${tripId}`
+      : `/u/${authorUid}?post=${tripId}`;
+
+  try {
+    await navigator.clipboard.writeText(url);
+
+    setShareToast((m) => ({ ...m, [tripId]: true }));
+    setTimeout(() => {
+      setShareToast((m) => ({ ...m, [tripId]: false }));
+    }, 1200);
+  } catch (e) {
+    console.error("Clipboard copy failed:", e);
+  }
+
+  if (!user) return;
+
+  const tripRef = doc(db, "trips", tripId);
+  const shareRef = doc(db, "trips", tripId, "shares", user.uid);
+
+  // optimistic count
+  setShareCounts((c) => ({ ...c, [tripId]: (c[tripId] ?? 0) + 1 }));
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const [tripSnap, shareSnap] = await Promise.all([
+        tx.get(tripRef),
+        tx.get(shareRef),
+      ]);
+
+      if (!tripSnap.exists()) throw new Error("Trip does not exist");
+
+      const data = tripSnap.data() as { shareCount?: number };
+      const current = typeof data.shareCount === "number" ? data.shareCount : 0;
+
+      if (!shareSnap.exists()) {
+        tx.set(shareRef, { createdAt: serverTimestamp() });
+      }
+
+      tx.update(tripRef, { shareCount: current + 1 });
+    });
+  } catch (e) {
+    console.error("sharePost failed:", e);
+    // rollback optimistic
+    setShareCounts((c) => ({ ...c, [tripId]: Math.max(0, (c[tripId] ?? 1) - 1) }));
+  }
+};
 
 return (
   <AnimatePresence>
@@ -511,7 +660,79 @@ return (
                           <Heart size={14} className={likedByMe[trip.id] ? "fill-current" : ""} />
                           <span>{likeCounts[trip.id] ?? 0}</span>
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !(commentsOpen[trip.id] ?? false);
+                            setCommentsOpen((m) => ({ ...m, [trip.id]: next }));
+                            if (next && !commentsByTrip[trip.id]) loadComments(trip.id);
+                          }}
+                          className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold border transition bg-white/5 border-white/10 text-white/75 hover:text-white hover:bg-white/10"
+                          aria-label="Comments"
+                          title="Comments"
+                        >
+                          <MessageCircle size={14} />
+                          <span>{commentCounts[trip.id] ?? 0}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sharePost(trip.id, trip.userId)}
+                          className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold border transition bg-white/5 border-white/10 text-white/75 hover:text-white hover:bg-white/10"
+                          aria-label="Share"
+                          title="Share"
+                        >
+                          <Share2 size={14} />
+                          <span>{shareCounts[trip.id] ?? 0}</span>
+                        </button>
+
+                        {shareToast[trip.id] && (
+                          <span className="text-[11px] text-sky-200/90">Copied!</span>
+                        )}
                       </div>
+                      {commentsOpen[trip.id] && (
+                      <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3">
+                        {commentsLoading[trip.id] && (
+                          <div className="text-[11px] text-slate-300">Loading comments…</div>
+                        )}
+
+                        {!commentsLoading[trip.id] && (commentsByTrip[trip.id]?.length ?? 0) === 0 && (
+                          <div className="text-[11px] text-slate-300">No comments yet.</div>
+                        )}
+
+                        {!commentsLoading[trip.id] && (commentsByTrip[trip.id]?.length ?? 0) > 0 && (
+                          <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                            {commentsByTrip[trip.id].map((c) => (
+                              <div key={c.id} className="text-[11px] text-slate-100">
+                                <span className="text-slate-300 mr-2">{c.userId?.slice(0, 6)}:</span>
+                                <span className="break-words">{c.body}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="mt-3 flex items-center gap-2">
+                          <input
+                            value={commentDraft[trip.id] ?? ""}
+                            onChange={(e) => setCommentDraft((m) => ({ ...m, [trip.id]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") addComment(trip.id);
+                            }}
+                            placeholder={user ? "Write a comment…" : "Log in to comment"}
+                            disabled={!user}
+                            className="flex-1 bg-black/20 border border-white/10 rounded-full px-3 py-2 text-[12px] text-white placeholder-white/35 focus:outline-none focus:ring-2 focus:ring-sky-500/40 disabled:opacity-60"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => addComment(trip.id)}
+                            disabled={!user || !(commentDraft[trip.id] ?? "").trim()}
+                            className="px-3 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-[12px] font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            Post
+                          </button>
+                        </div>
+                      </div>
+                      )}
                     </div>
                   </article>
                 ))}
