@@ -461,7 +461,7 @@ export default function Globe() {
   }, [selectedCountry]);
 
   return (
-    <div className="relative flex items-center justify-center w-full h-screen overflow-hidden">
+    <div className="relative flex items-center justify-center w-full h-full overflow-hidden">
       <Canvas
         camera={{ position: [35, 30, 4], fov: 45 }}
         gl={{ alpha: true, antialias: true }}
@@ -494,7 +494,7 @@ export default function Globe() {
           enablePan={false}
           enableZoom
           minDistance={1.8}
-          maxDistance={4}
+          maxDistance={3.5}
           zoomSpeed={0.4}
           rotateSpeed={0.3}
           onStart={handleUserInteractionStart}
