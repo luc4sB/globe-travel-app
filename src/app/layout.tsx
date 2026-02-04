@@ -16,6 +16,8 @@ import { AuthProvider, useAuth } from "./components/AuthProvider";
 import { signOut } from "firebase/auth";
 import { auth } from "./lib/firebase";
 import AuthModal from "./components/AuthModal";
+import { Suspense } from "react";
+
 
 // Share filter state between navbar and HotelResults
 export const FilterContext = createContext<{
@@ -291,6 +293,7 @@ export default function RootLayout({
       <body
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased overflow-hidden`}
       >
+        <Suspense fallback={null}>
         <AuthProvider>
           <ThemeProvider>
             <Background />
@@ -338,6 +341,7 @@ export default function RootLayout({
             <LogoIntro />
           </ThemeProvider>
         </AuthProvider>
+        </Suspense>
       </body>
     </html>
   );
