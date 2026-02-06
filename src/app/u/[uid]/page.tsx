@@ -4,17 +4,25 @@ import Image from "next/image";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { db } from "../../lib/firebase";
+import { useAuth } from "../../components/AuthProvider";
 import {
+  addDoc,
   collection,
   doc,
+  getCountFromServer,
   getDoc,
   getDocs,
-  getCountFromServer,
   limit,
   orderBy,
   query,
+  runTransaction,
+  serverTimestamp,
   where,
+  increment,
+  setDoc,
+  onSnapshot,
 } from "firebase/firestore";
+import { X, Heart, Share2 } from "lucide-react";
 
 type Trip = {
   id: string;
@@ -34,30 +42,71 @@ type UserDoc = {
   displayName: string;
   photoURL?: string;
   bio?: string;
+  friendCount?: number;
+};
+
+type CommentDoc = {
+  id: string;
+  tripId: string;
+  userId: string;
+  body: string;
+  createdAt?: { seconds: number; nanoseconds: number };
+};
+
+type FriendRequestDoc = {
+  id: string;
+  fromUid: string;
+  toUid: string;
+  status: "pending" | "accepted" | "rejected";
+  createdAt?: { seconds: number; nanoseconds: number };
+  updatedAt?: { seconds: number; nanoseconds: number };
 };
 
 function formatDate(ts?: { seconds: number; nanoseconds: number }) {
   if (!ts) return "";
-  const d = new Date(ts.seconds * 1000);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(ts.seconds * 1000).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTime(ts?: { seconds: number; nanoseconds: number }) {
+  if (!ts) return "";
+  return new Date(ts.seconds * 1000).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function UserProfilePage() {
-  const params = useParams<{ uid: string }>();
-  const uid = useMemo(() => (params?.uid ? String(params.uid) : ""), [params]);
-
+  const { uid } = useParams<{ uid: string }>();
   const search = useSearchParams();
   const focusPostId = search.get("post");
 
+  const { user } = useAuth();
+
   const [profile, setProfile] = useState<UserDoc | null>(null);
-
   const [trips, setTrips] = useState<Trip[]>([]);
-  const [loadingTrips, setLoadingTrips] = useState(true);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [activePostId, setActivePostId] = useState<string | null>(null);
 
-  const [friendCount, setFriendCount] = useState<number>(0);
+  const [friendCount, setFriendCount] = useState(0);
+  const [friendStatus, setFriendStatus] = useState<
+    "none" | "requested_by_me" | "requested_me" | "friends"
+  >("none");
+  const [friendBusy, setFriendBusy] = useState(false);
 
-  const tripCount = trips.length;
+  const [incomingRequests, setIncomingRequests] = useState<FriendRequestDoc[]>([]);
+  const [requestUsers, setRequestUsers] = useState<Record<string, UserDoc | null>>({});
+  const [requestsBusy, setRequestsBusy] = useState(false);
+
+  const friendRequestId = (a: string, b: string) => (a < b ? `${a}_${b}` : `${b}_${a}`);
+
+
+  const activeTrip = useMemo(
+    () => (activePostId ? trips.find((t) => t.id === activePostId) ?? null : null),
+    [activePostId, trips]
+  );
 
   const totalLikes = useMemo(
     () =>
@@ -68,113 +117,523 @@ export default function UserProfilePage() {
     [trips]
   );
 
+  const isOwnProfile = !!user && user.uid === uid;
+
+  const [comments, setComments] = useState<CommentDoc[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentInput, setCommentInput] = useState("");
+  const [commentBusy, setCommentBusy] = useState(false);
+
+  const [shareToast, setShareToast] = useState<string | null>(null);
+
   useEffect(() => {
     if (!uid) return;
 
     let cancelled = false;
-    setLoadingProfile(true);
 
     (async () => {
       try {
-        const uref = doc(db, "users", uid);
-        const snap = await getDoc(uref);
+        const u = await getDoc(doc(db, "users", uid));
         if (cancelled) return;
 
-        if (!snap.exists()) {
-          setProfile({ displayName: "Unknown user" });
-          return;
-        }
+        const data = u.exists() ? (u.data() as any) : null;
+        setProfile(data);
 
-        const data = snap.data() as any;
-        setProfile({
-          displayName: data.displayName ?? "User",
-          photoURL: data.photoURL,
-          bio: data.bio,
-        });
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) setProfile({ displayName: "User" });
-      } finally {
-        if (!cancelled) setLoadingProfile(false);
+        if (user && user.uid !== uid) {
+          setFriendCount(typeof data?.friendCount === "number" ? data.friendCount : 0);
+        }
+      } catch {
+        if (!cancelled) setProfile(null);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [uid]);
+  }, [uid, user]);
 
   useEffect(() => {
     if (!uid) return;
 
     let cancelled = false;
-    setLoadingTrips(true);
+
+    let unsubFriends: (() => void) | null = null;
+
+    if (user && user.uid === uid) {
+      const colRef = collection(db, "friends", uid, "list");
+      unsubFriends = onSnapshot(
+        colRef,
+        (snap) => {
+          if (!cancelled) setFriendCount(snap.size);
+        },
+        (err) => {
+          console.error("friends onSnapshot failed:", err);
+          if (!cancelled) setFriendCount(0);
+        }
+      );
+    } else {
+    }
 
     (async () => {
       try {
-        const q = query(
+        const qTrips = query(
           collection(db, "trips"),
           where("userId", "==", uid),
           orderBy("createdAt", "desc"),
-          limit(50)
+          limit(60)
         );
 
-        const snap = await getDocs(q);
+        const snap = await getDocs(qTrips);
         if (cancelled) return;
 
-        const data: Trip[] = snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as any),
-        }));
-
-        setTrips(data);
+        setTrips(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
       } catch (e) {
-        console.error(e);
+        console.error("load trips failed:", e);
         if (!cancelled) setTrips([]);
-      } finally {
-        if (!cancelled) setLoadingTrips(false);
       }
     })();
 
     return () => {
       cancelled = true;
+      if (unsubFriends) unsubFriends();
     };
-  }, [uid]);
+  }, [uid, user]);
 
   useEffect(() => {
-    if (!uid) return;
+    if (!focusPostId) {
+      setActivePostId(null);
+      return;
+    }
+    setActivePostId(focusPostId);
+  }, [focusPostId]);
+
+  useEffect(() => {
+    if (!user || !uid || user.uid === uid) {
+      setFriendStatus("none");
+      return;
+    }
 
     let cancelled = false;
 
     (async () => {
       try {
-        const col = collection(db, "friends", uid, "list");
-        try {
-          const agg = await getCountFromServer(col);
-          if (!cancelled) setFriendCount(agg.data().count);
-        } catch {
-          const snap = await getDocs(col);
-          if (!cancelled) setFriendCount(snap.size);
+        const [reqSnap, friendDoc] = await Promise.all([
+          getDoc(doc(db, "friendRequests", friendRequestId(user.uid, uid))),
+          getDoc(doc(db, "friends", user.uid, "list", uid)),
+        ]);
+
+        if (cancelled) return;
+
+        if (friendDoc.exists()) {
+          setFriendStatus("friends");
+          return;
+        }
+
+        if (reqSnap.exists() && (reqSnap.data() as any).status === "pending") {
+          const d = reqSnap.data() as any;
+          if (d.fromUid === user.uid) setFriendStatus("requested_by_me");
+          else setFriendStatus("requested_me");
+          return;
+        }
+
+        setFriendStatus("none");
+      } catch {
+        if (!cancelled) setFriendStatus("none");
+      }
+    })();
+
+
+    return () => {
+      cancelled = true;
+    };
+  }, [uid, user]);
+
+  const sendFriendRequest = async () => {
+    if (!user || !uid || user.uid === uid) return;
+    setFriendBusy(true);
+
+    const canonicalId = friendRequestId(user.uid, uid);
+    const legacyId = `${user.uid}_${uid}`;
+
+    const canonicalRef = doc(db, "friendRequests", canonicalId);
+    const legacyRef = doc(db, "friendRequests", legacyId);
+
+    try {
+      await runTransaction(db, async (tx) => {
+        const canonicalSnap = await tx.get(canonicalRef);
+
+        let legacySnap: any = null;
+        if (legacyId !== canonicalId) {
+          legacySnap = await tx.get(legacyRef);
+        }
+
+        if (!canonicalSnap.exists()) {
+          tx.set(canonicalRef, {
+            fromUid: user.uid,
+            toUid: uid,
+            status: "pending",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          const data = canonicalSnap.data() as any;
+
+          if (data.status === "pending") {
+          } else if (data.status === "rejected") {
+            tx.update(canonicalRef, {
+              status: "pending",
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+
+        if (legacySnap?.exists()) {
+          tx.delete(legacyRef);
+        }
+      });
+
+      setFriendStatus("requested_by_me");
+    } catch (e) {
+      console.error("sendFriendRequest failed:", e);
+    } finally {
+      setFriendBusy(false);
+    }
+  };
+
+  const cancelFriendRequest = async () => {
+    if (!user || !uid) return;
+    setFriendBusy(true);
+
+    const canonicalId = friendRequestId(user.uid, uid);
+    const legacyId = `${user.uid}_${uid}`;
+
+    const canonicalRef = doc(db, "friendRequests", canonicalId);
+    const legacyRef = doc(db, "friendRequests", legacyId);
+
+    try {
+      await runTransaction(db, async (tx) => {
+        const canonicalSnap = await tx.get(canonicalRef);
+
+        let legacySnap: any = null;
+        if (legacyId !== canonicalId) {
+          legacySnap = await tx.get(legacyRef);
+        }
+
+        if (canonicalSnap.exists()) tx.delete(canonicalRef);
+        if (legacySnap?.exists()) tx.delete(legacyRef);
+      });
+
+      setFriendStatus("none");
+    } catch (e) {
+      console.error("cancelFriendRequest failed:", e);
+    } finally {
+      setFriendBusy(false);
+    }
+  };
+
+  const unfriend = async (otherUid: string) => {
+    if (!user) return;
+
+    const a = user.uid;
+    const b = otherUid;
+
+    const myFriendRef = doc(db, "friends", a, "list", b);
+    const theirFriendRef = doc(db, "friends", b, "list", a);
+
+    const canonicalReqId = friendRequestId(a, b);
+    const reqRef = doc(db, "friendRequests", canonicalReqId);
+
+    try {
+      await runTransaction(db, async (tx) => {
+        const [mySnap, theirSnap, reqSnap] = await Promise.all([
+          tx.get(myFriendRef),
+          tx.get(theirFriendRef),
+          tx.get(reqRef),
+        ]);
+
+        if (mySnap.exists()) tx.delete(myFriendRef);
+        if (theirSnap.exists()) tx.delete(theirFriendRef);
+
+        if (reqSnap.exists()) tx.delete(reqRef);
+      });
+
+      setFriendStatus("none");
+      setFriendCount((c) => Math.max(0, c - 1));
+    } catch (e) {
+      console.error("unfriend failed:", e);
+    }
+  };
+
+  const acceptFriendRequestFrom = async (fromUid: string) => {
+    if (!user || !uid || user.uid !== uid) return;
+    setRequestsBusy(true);
+
+    const canonicalId = friendRequestId(fromUid, user.uid);
+    const legacyId = `${fromUid}_${user.uid}`;
+
+    const canonicalRef = doc(db, "friendRequests", canonicalId);
+    const legacyRef = doc(db, "friendRequests", legacyId);
+
+    const myFriendRef = doc(db, "friends", user.uid, "list", fromUid);
+    const theirFriendRef = doc(db, "friends", fromUid, "list", user.uid);
+
+    try {
+      await runTransaction(db, async (tx) => {
+        const canonicalSnap = await tx.get(canonicalRef);
+        const legacySnap = legacyId !== canonicalId ? await tx.get(legacyRef) : null;
+
+        const useCanonical = canonicalSnap.exists();
+        const useLegacy = !useCanonical && !!legacySnap?.exists();
+
+        if (!useCanonical && !useLegacy) throw new Error("Friend request not found");
+
+        const snap = useCanonical ? canonicalSnap : (legacySnap as any);
+        const data = snap.data() as any;
+
+        if (data.toUid !== user.uid) throw new Error("Not recipient");
+        if (data.status !== "pending") return;
+
+        tx.update(snap.ref, {
+          status: "accepted",
+          updatedAt: serverTimestamp(),
+        });
+
+        if (useCanonical && legacySnap?.exists() && legacyId !== canonicalId) {
+          tx.delete(legacyRef);
+        }
+      });
+
+      await runTransaction(db, async (tx) => {
+        const mySnap = await tx.get(myFriendRef);
+        const theirSnap = await tx.get(theirFriendRef);
+
+        const needMine = !mySnap.exists();
+        const needTheirs = !theirSnap.exists();
+
+        if (needMine) tx.set(myFriendRef, { createdAt: serverTimestamp() });
+        if (needTheirs) tx.set(theirFriendRef, { createdAt: serverTimestamp() });
+      });
+
+      setIncomingRequests((prev) => prev.filter((r) => r.fromUid !== fromUid));
+      setFriendCount((c) => c + 1);
+    } catch (e) {
+      console.error("acceptFriendRequestFrom failed:", e);
+    } finally {
+      setRequestsBusy(false);
+    }
+  };
+
+  const declineFriendRequestFrom = async (fromUid: string) => {
+    if (!user || !uid || user.uid !== uid) return;
+    setRequestsBusy(true);
+
+    const incomingId = friendRequestId(fromUid, user.uid);
+    const incomingRef = doc(db, "friendRequests", incomingId);
+
+    try {
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(incomingRef);
+        if (!snap.exists()) return;
+        const data = snap.data() as any;
+        if (data.status !== "pending") return;
+
+        tx.update(incomingRef, {
+          status: "rejected",
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      setIncomingRequests((prev) => prev.filter((r) => r.fromUid !== fromUid));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRequestsBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOwnProfile || !user) {
+      setIncomingRequests([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const qReq = query(
+          collection(db, "friendRequests"),
+          where("toUid", "==", user.uid),
+          limit(50)
+        );
+
+        const snap = await getDocs(qReq);
+        if (cancelled) return;
+
+        const data = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) }) as FriendRequestDoc)
+          .filter((r) => r.status === "pending");
+
+        setIncomingRequests(data);
+
+        const uniqueFrom = Array.from(new Set(data.map((r) => r.fromUid)));
+        const missing = uniqueFrom.filter((id) => !(id in requestUsers));
+
+        if (missing.length) {
+          const fetched = await Promise.all(
+            missing.map(async (id) => {
+              try {
+                const u = await getDoc(doc(db, "users", id));
+                return [id, u.exists() ? (u.data() as any) : null] as const;
+              } catch {
+                return [id, null] as const;
+              }
+            })
+          );
+
+          if (!cancelled) {
+            setRequestUsers((m) => {
+              const next = { ...m };
+              for (const [id, u] of fetched) next[id] = u;
+              return next;
+            });
+          }
         }
       } catch (e) {
         console.error(e);
-        if (!cancelled) setFriendCount(0);
+        if (!cancelled) setIncomingRequests([]);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [uid]);
+  }, [isOwnProfile, user, requestUsers]);
 
   useEffect(() => {
-    if (!focusPostId || !trips.length) return;
+    if (!activeTrip) {
+      setComments([]);
+      setCommentsLoading(false);
+      return;
+    }
 
-    const el = document.getElementById(`post-${focusPostId}`);
-    if (!el) return;
+    let cancelled = false;
+    setCommentsLoading(true);
 
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [focusPostId, trips]);
+    (async () => {
+      try {
+        const qCom = query(
+          collection(db, "trips", activeTrip.id, "comments"),
+          orderBy("createdAt", "desc"),
+          limit(60)
+        );
+
+        const snap = await getDocs(qCom);
+        if (cancelled) return;
+
+        setComments(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }))
+        );
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setComments([]);
+      } finally {
+        if (!cancelled) setCommentsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTrip]);
+
+
+  const addComment = async () => {
+    if (!user || !activeTrip) return;
+
+    const text = commentInput.trim();
+    if (!text || commentBusy) return;
+
+    setCommentBusy(true);
+    setCommentInput("");
+
+    const optimistic: CommentDoc = {
+      id: `local-${Date.now()}`,
+      tripId: activeTrip.id,
+      userId: user.uid,
+      body: text,
+      createdAt: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
+    };
+
+    setComments((prev) => [optimistic, ...prev]);
+
+    const tripRef = doc(db, "trips", activeTrip.id);
+    const commentRef = doc(collection(db, "trips", activeTrip.id, "comments"));
+
+    try {
+      await runTransaction(db, async (tx) => {
+        const tripSnap = await tx.get(tripRef);
+        if (!tripSnap.exists()) throw new Error("Trip does not exist");
+
+        const data = tripSnap.data() as { commentCount?: number };
+        const current = typeof data.commentCount === "number" ? data.commentCount : 0;
+
+        tx.set(commentRef, {
+          userId: user.uid,
+          body: text,
+          createdAt: serverTimestamp(),
+        });
+
+        tx.update(tripRef, { commentCount: current + 1 });
+      });
+
+      const snap = await getDocs(
+        query(
+          collection(db, "trips", activeTrip.id, "comments"),
+          orderBy("createdAt", "desc"),
+          limit(60)
+        )
+      );
+      setComments(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+    } catch (e) {
+      console.error("addComment failed:", e);
+      setComments((prev) => prev.filter((c) => c.id !== optimistic.id));
+      setCommentInput(text);
+    } finally {
+      setCommentBusy(false);
+    }
+  };
+
+
+  const sharePost = async (tripId: string) => {
+    const url = `${window.location.origin}/u/${uid}?post=${tripId}`;
+
+    try {
+      if ((navigator as any).share) {
+        await (navigator as any).share({ url });
+        setShareToast("Shared");
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareToast("Link copied");
+      }
+    } catch {
+      try {
+        await navigator.clipboard.writeText(url);
+        setShareToast("Link copied");
+      } catch {
+        setShareToast("Could not share");
+      }
+    } finally {
+      window.setTimeout(() => setShareToast(null), 1400);
+    }
+  };
+
+  const closeModal = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("post");
+    history.pushState({}, "", url.toString());
+    setActivePostId(null);
+  };
 
   const avatarUrl =
     profile?.photoURL && profile.photoURL.trim().length > 0
@@ -187,13 +646,13 @@ export default function UserProfilePage() {
       : "User";
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <div className="mx-auto w-full max-w-5xl px-5 py-10">
-        <div className="rounded-[2.25rem] border border-white/10 bg-white/5 shadow-[0_0_60px_rgba(0,0,0,0.45)] overflow-hidden">
-          <div className="max-h-[calc(100vh-120px)] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="p-8">
+    <div className="min-h-screen bg-black text-white pt-[10px] relative">
+      <div className="mx-auto w-full max-w-6xl px-6">
+        <div className="h-[calc(100vh-70px)] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-6 pb-10">
+          <div className="rounded-[2.25rem] border border-white/10 bg-white/5 shadow-[0_0_60px_rgba(0,0,0,0.45)] overflow-hidden">
+            <div className="p-7">
               <div className="flex flex-col items-center text-center">
-                <div className="relative h-24 w-24 overflow-hidden rounded-full border border-white/15 bg-white/10">
+                <div className="relative h-20 w-20 overflow-hidden rounded-full border border-white/15 bg-white/10">
                   <Image
                     src={avatarUrl}
                     alt={displayName}
@@ -203,164 +662,337 @@ export default function UserProfilePage() {
                   />
                 </div>
 
-                <div className="mt-4">
-                  {loadingProfile ? (
-                    <div className="h-5 w-40 rounded bg-white/10 animate-pulse" />
-                  ) : (
-                    <h1 className="text-xl font-semibold tracking-tight">
-                      {displayName}
-                    </h1>
-                  )}
-
-                  <p className="mt-1 text-[12px] text-white/55">
-                    @{uid.slice(0, 8)}
-                  </p>
+                <div className="mt-3">
+                  <h1 className="text-lg font-semibold tracking-tight">{displayName}</h1>
+                  <p className="mt-1 text-[12px] text-white/55">@{uid.slice(0, 8)}</p>
 
                   {!!profile?.bio && (
-                    <p className="mt-3 max-w-md text-[13px] text-white/80 leading-relaxed">
+                    <p className="mt-2 max-w-md text-[13px] text-white/80 leading-relaxed">
                       {profile.bio}
                     </p>
+                  )}
+
+                  {user && user.uid !== uid && (
+                    <div className="mt-4 flex items-center justify-center gap-2">
+                      {friendStatus === "none" && (
+                        <button
+                          onClick={sendFriendRequest}
+                          disabled={friendBusy}
+                          className="px-5 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          Add Friend
+                        </button>
+                      )}
+
+                      {friendStatus === "requested_by_me" && (
+                        <button
+                          onClick={cancelFriendRequest}
+                          disabled={friendBusy}
+                          className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/15 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          Requested (Cancel)
+                        </button>
+                      )}
+
+                      {friendStatus === "requested_me" && (
+                        <div className="px-5 py-2 rounded-full bg-white/10 text-sm font-semibold text-white">
+                          They requested you
+                        </div>
+                      )}
+
+                      {friendStatus === "friends" && (
+                        <>
+                          <div className="px-5 py-2 rounded-full bg-emerald-500/15 border border-emerald-400/25 text-sm font-semibold text-emerald-200">
+                            Friends
+                          </div>
+                          <button
+                            onClick={() => unfriend(uid)}
+                            disabled={friendBusy}
+                            className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/15 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            Unfriend
+                          </button>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-                <div className="flex flex-col items-center justify-center py-2">
-                  <div className="text-lg font-semibold leading-none">
-                    {loadingTrips ? "—" : tripCount}
-                  </div>
+              <div className="mt-5 grid grid-cols-3 rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
+                <div className="py-4 flex flex-col items-center justify-center">
+                  <div className="text-lg font-semibold leading-none">{trips.length}</div>
                   <div className="mt-1 text-[11px] uppercase tracking-wide text-white/55">
                     Trips
                   </div>
                 </div>
-
-                <div className="flex flex-col items-center justify-center py-2 border-x border-white/10">
+                <div className="py-4 flex flex-col items-center justify-center border-x border-white/10">
                   <div className="text-lg font-semibold leading-none">
-                    {loadingTrips ? "—" : friendCount}
+                    {isOwnProfile ? friendCount : "Private"}
                   </div>
                   <div className="mt-1 text-[11px] uppercase tracking-wide text-white/55">
                     Friends
                   </div>
                 </div>
-
-                <div className="flex flex-col items-center justify-center py-2">
-                  <div className="text-lg font-semibold leading-none">
-                    {loadingTrips ? "—" : totalLikes}
-                  </div>
+                <div className="py-4 flex flex-col items-center justify-center">
+                  <div className="text-lg font-semibold leading-none">{totalLikes}</div>
                   <div className="mt-1 text-[11px] uppercase tracking-wide text-white/55">
                     Likes
                   </div>
                 </div>
               </div>
+
+              {isOwnProfile && (
+                <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                    <div className="text-sm font-semibold text-white/90">Friend requests</div>
+                    <div className="text-[12px] text-white/50">
+                      {incomingRequests.length}
+                    </div>
+                  </div>
+
+                  <div className="max-h-56 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {incomingRequests.length === 0 ? (
+                      <div className="px-5 py-4 text-[12px] text-white/55">
+                        No requests right now.
+                      </div>
+                    ) : (
+                      incomingRequests.map((r) => {
+                        const u = requestUsers[r.fromUid];
+                        const name =
+                          u?.displayName && u.displayName.trim().length > 0
+                            ? u.displayName
+                            : r.fromUid.slice(0, 8);
+                        const photo =
+                          u?.photoURL && u.photoURL.trim().length > 0
+                            ? u.photoURL
+                            : "/logo.png";
+
+                        return (
+                          <div
+                            key={r.id}
+                            className="px-5 py-3 border-t border-white/10 flex items-center gap-3"
+                          >
+                            <div className="relative h-9 w-9 rounded-full overflow-hidden border border-white/10 bg-white/10">
+                              <Image
+                                src={photo}
+                                alt={name}
+                                fill
+                                unoptimized
+                                className="object-cover"
+                              />
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[13px] text-white/90 truncate">
+                                {name}
+                              </div>
+                              <div className="text-[11px] text-white/50">
+                                @{r.fromUid.slice(0, 8)}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => acceptFriendRequestFrom(r.fromUid)}
+                                disabled={requestsBusy}
+                                className="px-3 py-1.5 rounded-full bg-sky-500 hover:bg-sky-600 text-[12px] font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                              >
+                                Accept
+                              </button>
+                              <button
+                                onClick={() => declineFriendRequestFrom(r.fromUid)}
+                                disabled={requestsBusy}
+                                className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-[12px] font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="border-t border-white/10" />
 
-            <div className="p-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {loadingTrips && (
-                <>
-                  <div className="h-80 rounded-2xl bg-white/5 animate-pulse" />
-                  <div className="h-80 rounded-2xl bg-white/5 animate-pulse" />
-                  <div className="h-80 rounded-2xl bg-white/5 animate-pulse" />
-                  <div className="h-80 rounded-2xl bg-white/5 animate-pulse" />
-                  <div className="h-80 rounded-2xl bg-white/5 animate-pulse" />
-                  <div className="h-80 rounded-2xl bg-white/5 animate-pulse" />
-                </>
-              )}
-
-              {!loadingTrips && trips.length === 0 && (
-                <div className="sm:col-span-2 lg:col-span-3 rounded-2xl border border-white/10 bg-black/20 p-6 text-center">
-                  <div className="text-sm text-white/70">
-                    No trips shared yet.
-                  </div>
-                </div>
-              )}
-
-              {!loadingTrips &&
-                trips.map((trip) => (
-                  <article
-                    key={trip.id}
-                    id={`post-${trip.id}`}
-                    className={[
-                      "rounded-2xl border border-white/10 bg-black/20 overflow-hidden",
-                      "shadow-[0_10px_30px_rgba(0,0,0,0.35)]",
-                      focusPostId === trip.id ? "ring-2 ring-sky-400/60" : "",
-                    ].join(" ")}
-                  >
-                    {trip.imageUrl && (
-                      <div className="relative w-full aspect-[16/9] bg-white/5">
-                        <Image
-                          src={trip.imageUrl}
-                          alt={trip.title}
-                          fill
-                          unoptimized
-                          className="object-cover"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                        <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold line-clamp-1">
-                              {trip.title}
-                            </div>
-                            <div className="text-[11px] text-white/75">
-                              {trip.cityName}, {trip.countryCode}
-                            </div>
-                          </div>
-                          <div className="text-[11px] text-white/65 whitespace-nowrap">
-                            {formatDate(trip.createdAt)}
-                          </div>
-                        </div>
+            <div className="p-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {trips.map((trip) => (
+                <button
+                  key={trip.id}
+                  type="button"
+                  onClick={() => {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("post", trip.id);
+                    history.pushState({}, "", url.toString());
+                    setActivePostId(trip.id);
+                  }}
+                  className="rounded-2xl overflow-hidden border border-white/10 bg-black/20 hover:bg-black/25 transition shadow-[0_10px_30px_rgba(0,0,0,0.28)] text-left"
+                >
+                  <div className="relative w-full aspect-square bg-white/5">
+                    {trip.imageUrl ? (
+                      <Image
+                        src={trip.imageUrl}
+                        alt={trip.title}
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-[12px] text-white/50">
+                        No image
                       </div>
                     )}
-
-                    <div className="p-4">
-                      {!trip.imageUrl && (
-                        <div className="flex items-start justify-between gap-3 mb-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold line-clamp-2">
-                              {trip.title}
-                            </div>
-                            <div className="text-[11px] text-white/70">
-                              {trip.cityName}, {trip.countryCode}
-                            </div>
-                          </div>
-                          <div className="text-[11px] text-white/60 whitespace-nowrap">
-                            {formatDate(trip.createdAt)}
-                          </div>
-                        </div>
-                      )}
-
-                      <p className="text-[13px] text-white/85 leading-relaxed break-words line-clamp-4">
-                        {trip.body}
-                      </p>
-
-                      <div className="mt-3 grid grid-cols-3 rounded-xl border border-white/10 bg-black/30 py-2 text-center">
-                        <div className="text-[12px] text-white/75">
-                          <span className="font-semibold text-white/90">
-                            {trip.likeCount ?? 0}
-                          </span>{" "}
-                          likes
-                        </div>
-                        <div className="text-[12px] text-white/75 border-x border-white/10">
-                          <span className="font-semibold text-white/90">
-                            {trip.commentCount ?? 0}
-                          </span>{" "}
-                          comments
-                        </div>
-                        <div className="text-[12px] text-white/75">
-                          <span className="font-semibold text-white/90">
-                            {trip.shareCount ?? 0}
-                          </span>{" "}
-                          shares
-                        </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
+                    <div className="absolute bottom-3 left-3 right-3">
+                      <div className="text-[12px] font-semibold text-white line-clamp-1">
+                        {trip.title}
+                      </div>
+                      <div className="text-[11px] text-white/70 line-clamp-1">
+                        {trip.cityName}, {trip.countryCode}
                       </div>
                     </div>
-                  </article>
-                ))}
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>
       </div>
+
+      {activeTrip && (
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="absolute inset-0" onClick={closeModal} />
+
+          <div className="relative z-[101] w-full max-w-6xl rounded-3xl overflow-hidden border border-white/10 bg-black shadow-2xl">
+            <button
+              onClick={closeModal}
+              className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="grid grid-cols-1 md:grid-cols-2">
+              <div className="relative aspect-square bg-black">
+                {activeTrip.imageUrl ? (
+                  <Image
+                    src={activeTrip.imageUrl}
+                    alt={activeTrip.title}
+                    fill
+                    unoptimized
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-[12px] text-white/50">
+                    No image
+                  </div>
+                )}
+              </div>
+
+              <div className="p-6 flex flex-col min-h-[520px]">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-lg font-semibold text-white/95 line-clamp-2">
+                      {activeTrip.title}
+                    </div>
+                    <div className="text-[12px] text-white/65 mt-1">
+                      {activeTrip.cityName}, {activeTrip.countryCode} ·{" "}
+                      {formatDate(activeTrip.createdAt)}
+                    </div>
+                  </div>
+
+                  {shareToast && (
+                    <div className="text-[12px] px-3 py-1.5 rounded-full bg-white/10 text-white/80">
+                      {shareToast}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 text-[13px] text-white/85 leading-relaxed break-words">
+                  {activeTrip.body}
+                </div>
+
+                <div className="mt-5 flex items-center gap-4">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 text-[13px] text-white/80 hover:text-white"
+                  >
+                    <Heart size={16} />
+                    <span>{activeTrip.likeCount ?? 0}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => sharePost(activeTrip.id)}
+                    className="inline-flex items-center gap-2 text-[13px] text-white/80 hover:text-white"
+                  >
+                    <Share2 size={16} />
+                    <span>Share</span>
+                  </button>
+                </div>
+
+                <div className="mt-5 border-t border-white/10 pt-4 flex-1 flex flex-col min-h-0">
+                  <div className="text-[12px] font-semibold text-white/80 mb-3">
+                    Comments
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden space-y-3 pr-1">
+                    {commentsLoading ? (
+                      <div className="text-[12px] text-white/55">Loading…</div>
+                    ) : comments.length === 0 ? (
+                      <div className="text-[12px] text-white/55">
+                        No comments yet.
+                      </div>
+                    ) : (
+                      comments.map((c) => (
+                        <div
+                          key={c.id}
+                          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[11px] text-white/65">
+                              @{c.userId.slice(0, 8)}
+                            </div>
+                            <div className="text-[11px] text-white/45">
+                              {c.createdAt ? formatTime(c.createdAt) : ""}
+                            </div>
+                          </div>
+                          <div className="mt-1 text-[13px] text-white/85 leading-relaxed break-words whitespace-pre-wrap">
+                            {c.body}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="mt-4 flex items-center gap-2">
+                    <input
+                      value={commentInput}
+                      onChange={(e) => setCommentInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addComment();
+                      }}
+                      placeholder={user ? "Write a comment…" : "Log in to comment"}
+                      disabled={!user || commentBusy}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-full px-4 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-sky-500/40 disabled:opacity-60"
+                    />
+                    <button
+                      onClick={addComment}
+                      disabled={!user || commentBusy || !commentInput.trim()}
+                      className="px-4 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      Send
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

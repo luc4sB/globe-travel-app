@@ -12,13 +12,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
-    const saved =
-      (localStorage.getItem("theme") as Theme) ||
-      (window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light");
-    setTheme(saved);
-    document.documentElement.classList.toggle("dark", saved === "dark");
+    const saved = localStorage.getItem("theme") as Theme | null;
+    const initial: Theme = saved ?? "light";
+    setTheme(initial);
+    document.documentElement.classList.toggle("dark", initial === "dark");
   }, []);
 
   useEffect(() => {

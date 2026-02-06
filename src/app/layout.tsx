@@ -3,7 +3,6 @@
 import "./globals.css";
 import { GeistSans, GeistMono } from "geist/font";
 import { ThemeProvider, useTheme } from "./themeProvider";
-import ThemeToggle from "./components/themeToggle";
 import Background from "./components/Background";
 import SearchBar from "./components/SearchBar";
 import LogoIntro from "./components/LogoIntro";
@@ -11,7 +10,7 @@ import FlightSearchPanel from "./components/FlightSearchPanel";
 import HotelsSearch from "./components/HotelsSearch";
 import { useState, createContext, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Globe, SlidersHorizontal, MoreVertical } from "lucide-react";
+import { Globe, SlidersHorizontal, MoreVertical, User } from "lucide-react";
 import { AuthProvider, useAuth } from "./components/AuthProvider";
 import { signOut } from "firebase/auth";
 import { auth } from "./lib/firebase";
@@ -271,7 +270,18 @@ function Navbar({
           </>
         )}
 
-        <ThemeToggle />
+        <button
+          type="button"
+          onClick={() => {
+            if (user) router.push(`/u/${user.uid}`);
+            else onLoginClick();
+          }}
+          className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition text-white"
+          aria-label="Account"
+          title={user ? "Profile" : "Log in"}
+        >
+          <User size={18} />
+        </button>
       </div>
     </nav>
   );
