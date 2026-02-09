@@ -7,15 +7,8 @@ export default function Home() {
   const [flights, setFlights] = useState<any[]>([]);
 
   return (
-    <main
-      className="relative w-full text-white"
-      style={{
-        paddingTop: "0px",
-        height: "100vh",
-      }}
-    >
-      <div className="w-full h-[calc(100vh-70px)]">
-        <Globe />
+    <main className="relative w-full text-white">
+      <div className="w-full" style={{ height: "calc(100dvh - var(--nav-h) - var(--bottom-nav-h))" }}>        <Globe />
       </div>
     </main>
   );

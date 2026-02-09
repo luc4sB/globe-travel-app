@@ -16,6 +16,7 @@ import { signOut } from "firebase/auth";
 import { auth } from "./lib/firebase";
 import AuthModal from "./components/AuthModal";
 import { Suspense } from "react";
+import BottomNav from "./components/BottomNav";
 
 
 // Share filter state between navbar and HotelResults
@@ -51,6 +52,7 @@ function Navbar({
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
+  const navRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -72,6 +74,28 @@ function Navbar({
     };
   }, []);
 
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+
+    const setVar = () => {
+      const h = el.getBoundingClientRect().height;
+      document.body.style.setProperty("--nav-h", `${Math.round(h)}px`);
+    };
+
+    setVar();
+
+    const ro = new ResizeObserver(() => setVar());
+    ro.observe(el);
+
+    window.addEventListener("resize", setVar);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", setVar);
+    };
+  }, []);
+
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -82,10 +106,9 @@ function Navbar({
   };
 
   return (
-    <nav
+    <nav ref={navRef}
       style={
         {
-          "--nav-height": "70px",
           backgroundColor: isDark
             ? "rgba(10, 10, 20, 0.001)"
             : "rgba(255, 255, 255, 0.001)",
@@ -98,7 +121,7 @@ function Navbar({
         } as React.CSSProperties
       }
       className={`fixed top-0 left-0 w-full z-50 relative flex flex-wrap items-center justify-between
-        px-4 md:px-8 py-3 h-auto md:h-[var(--nav-height)]
+        px-4 md:px-8 py-3 h-auto md:h-[70px]
         backdrop-blur-[40px] border-b transition-all duration-300
         ${isDark ? "text-gray-100" : "text-slate-800"}`}
     >
@@ -301,7 +324,8 @@ export default function RootLayout({
   return (
     <html lang="en" className="!scroll-smooth" suppressHydrationWarning>
       <body
-        className={`${GeistSans.variable} ${GeistMono.variable} antialiased overflow-hidden`}
+        className={`${GeistSans.variable} ${GeistMono.variable} antialiased overflow-x-hidden`}
+        style={{ ["--bottom-nav-h" as any]: "64px", ["--nav-h" as any]: "70px", }as React.CSSProperties}
       >
         <Suspense fallback={null}>
         <AuthProvider>
@@ -352,6 +376,7 @@ export default function RootLayout({
           </ThemeProvider>
         </AuthProvider>
         </Suspense>
+        <BottomNav />
       </body>
     </html>
   );
