@@ -20,6 +20,7 @@ import {
   serverTimestamp,
   where,
 } from "firebase/firestore";
+import { useRouter } from "next/navigation";
 
 
 type Trip = {
@@ -50,6 +51,12 @@ type SocialPanelProps = {
   expanded?: boolean;
   onToggleExpanded?: () => void;
 };
+
+type PublicUser = {
+  displayName?: string;
+  photoURL?: string;
+};
+
 
 function formatDate(ts?: { seconds: number; nanoseconds: number }) {
   if (!ts) return "";
@@ -88,6 +95,9 @@ export default function SocialPanel({
 
   const [shareToast, setShareToast] = useState<Record<string, boolean>>({});
   const [shareCounts, setShareCounts] = useState<Record<string, number>>({});
+  const [usersById, setUsersById] = useState<Record<string, PublicUser | null>>({});
+
+  const router = useRouter();
 
   type ViewMode = "community" | "ai";
 type ChatMsg = { role: "user" | "assistant"; content: string };
@@ -470,6 +480,39 @@ const sharePost = async (tripId: string, authorUid: string) => {
   }
 };
 
+useEffect(() => {
+  let cancelled = false;
+
+  (async () => {
+    const missing = Array.from(new Set(trips.map(t => t.userId))).filter(
+      (uid) => usersById[uid] === undefined
+    );
+    if (missing.length === 0) return;
+
+    try {
+      const snaps = await Promise.all(missing.map((uid) => getDoc(doc(db, "users", uid))));
+      if (cancelled) return;
+
+      setUsersById((m) => {
+        const next = { ...m };
+        for (let i = 0; i < missing.length; i++) {
+          const uid = missing[i];
+          const s = snaps[i];
+          next[uid] = s.exists() ? (s.data() as any) : null;
+        }
+        return next;
+      });
+    } catch (e) {
+      console.error("Failed to load post authors:", e);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [trips, usersById]);
+
 return (
   <AnimatePresence>
     {open && (selectedCountry || aiIntent === "explore") && (
@@ -589,153 +632,184 @@ return (
 
               {!loading &&
                 hasTrips &&
-                trips.map((trip) => (
-                  <article
-                    key={trip.id}
-                    className="rounded-2xl border border-white/10 bg-black/20 hover:bg-black/25 transition overflow-hidden shadow-sm shadow-black/40"
-                  >
-                    {trip.imageUrl && (
-                      <div className="relative w-full aspect-[16/9] bg-white/5">
-                        <Image
-                          src={trip.imageUrl}
-                          alt={trip.title}
-                          fill
-                          unoptimized
-                          className="object-cover"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
-                        <div className="absolute bottom-2 left-3 right-3 flex items-end justify-between gap-3">
-                          <div className="flex flex-col">
-                            <h3 className="text-sm font-semibold text-white line-clamp-1 break-words">
-                              {trip.title}
-                            </h3>
-                            <span className="text-[11px] text-slate-200/90">
-                              {trip.cityName}, {trip.countryCode}
+                trips.map((trip) => {
+                    const author = usersById[trip.userId];
+                  return(
+                    <article
+                      key={trip.id}
+                      className="rounded-2xl border border-white/10 bg-black/20 hover:bg-black/25 transition overflow-hidden shadow-sm shadow-black/40"
+                    >
+                      {trip.imageUrl && (
+                        <div className="relative w-full aspect-[16/9] bg-white/5">
+                          <Image
+                            src={trip.imageUrl}
+                            alt={trip.title}
+                            fill
+                            unoptimized
+                            className="object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent" />
+                          <div className="absolute bottom-2 left-3 right-3 flex items-end justify-between gap-3">
+                            <div className="flex flex-col">
+                              <h3 className="text-sm font-semibold text-white line-clamp-1 break-words">
+                                {trip.title}
+                              </h3>
+                              <span className="text-[11px] text-slate-200/90">
+                                {trip.cityName}, {trip.countryCode}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-200/80 whitespace-nowrap">
+                              {formatDate(trip.createdAt)}
                             </span>
                           </div>
-                          <span className="text-[11px] text-slate-200/80 whitespace-nowrap">
-                            {formatDate(trip.createdAt)}
-                          </span>
                         </div>
-                      </div>
-                    )}
-
-                    <div className="px-4 py-3">
-                      {!trip.imageUrl && (
-                        <header className="flex items-center justify-between gap-2 mb-1">
-                          <div className="flex flex-col">
-                            <h3 className="text-sm font-semibold text-white line-clamp-2 break-words">
-                              {trip.title}
-                            </h3>
-                            <span className="text-[11px] text-slate-400">
-                              {trip.cityName}, {trip.countryCode}
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-slate-500 whitespace-nowrap">
-                            {formatDate(trip.createdAt)}
-                          </span>
-                        </header>
                       )}
 
-                      <p className="text-[12px] text-slate-200 leading-relaxed line-clamp-5 break-words">
-                        {trip.body}
-                      </p>
-
-                      {/* Actions */}
-                      <div className="mt-3 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleLike(trip.id)}
-                          disabled={!user}
-                          className={[
-                            "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold border transition",
-                            likedByMe[trip.id]
-                              ? "bg-pink-500/20 border-pink-400/30 text-pink-200"
-                              : "bg-white/5 border-white/10 text-white/75 hover:text-white hover:bg-white/10",
-                            !user ? "opacity-60 cursor-not-allowed" : "",
-                          ].join(" ")}
-                          aria-label="Like"
-                          title={user ? "Like" : "Log in to like"}
-                        >
-                          <Heart size={14} className={likedByMe[trip.id] ? "fill-current" : ""} />
-                          <span>{likeCounts[trip.id] ?? 0}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const next = !(commentsOpen[trip.id] ?? false);
-                            setCommentsOpen((m) => ({ ...m, [trip.id]: next }));
-                            if (next && !commentsByTrip[trip.id]) loadComments(trip.id);
-                          }}
-                          className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold border transition bg-white/5 border-white/10 text-white/75 hover:text-white hover:bg-white/10"
-                          aria-label="Comments"
-                          title="Comments"
-                        >
-                          <MessageCircle size={14} />
-                          <span>{commentCounts[trip.id] ?? 0}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => sharePost(trip.id, trip.userId)}
-                          className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold border transition bg-white/5 border-white/10 text-white/75 hover:text-white hover:bg-white/10"
-                          aria-label="Share"
-                          title="Share"
-                        >
-                          <Share2 size={14} />
-                          <span>{shareCounts[trip.id] ?? 0}</span>
-                        </button>
-
-                        {shareToast[trip.id] && (
-                          <span className="text-[11px] text-sky-200/90">Copied!</span>
-                        )}
-                      </div>
-                      {commentsOpen[trip.id] && (
-                      <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3">
-                        {commentsLoading[trip.id] && (
-                          <div className="text-[11px] text-slate-300">Loading comments…</div>
-                        )}
-
-                        {!commentsLoading[trip.id] && (commentsByTrip[trip.id]?.length ?? 0) === 0 && (
-                          <div className="text-[11px] text-slate-300">No comments yet.</div>
-                        )}
-
-                        {!commentsLoading[trip.id] && (commentsByTrip[trip.id]?.length ?? 0) > 0 && (
-                          <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                            {commentsByTrip[trip.id].map((c) => (
-                              <div key={c.id} className="text-[11px] text-slate-100">
-                                <span className="text-slate-300 mr-2">{c.userId?.slice(0, 6)}:</span>
-                                <span className="break-words">{c.body}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="mt-3 flex items-center gap-2">
-                          <input
-                            value={commentDraft[trip.id] ?? ""}
-                            onChange={(e) => setCommentDraft((m) => ({ ...m, [trip.id]: e.target.value }))}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") addComment(trip.id);
-                            }}
-                            placeholder={user ? "Write a comment…" : "Log in to comment"}
-                            disabled={!user}
-                            className="flex-1 bg-black/20 border border-white/10 rounded-full px-3 py-2 text-[12px] text-white placeholder-white/35 focus:outline-none focus:ring-2 focus:ring-sky-500/40 disabled:opacity-60"
-                          />
+                      <div className="px-4 py-3">
+                        <div className="mb-2 flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => addComment(trip.id)}
-                            disabled={!user || !(commentDraft[trip.id] ?? "").trim()}
-                            className="px-3 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-[12px] font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                            onClick={() => router.push(`/u/${trip.userId}`)}
+                            className="group flex items-center gap-2 text-left cursor-pointer transition hover:bg-white/5 rounded-xl px-2 py-1 -mx-2"
+                            title="View profile"
                           >
-                            Post
+                            <div className="relative h-8 w-8 overflow-hidden rounded-full bg-white/10 border border-white/10">
+                              {author?.photoURL ? (
+                                <Image
+                                  src={author.photoURL}
+                                  alt=""
+                                  fill
+                                  unoptimized
+                                  className="object-cover"
+                                />
+                              ) : null}
+                            </div>
+
+                            <div className="leading-tight">
+                              <div className="text-[12px] font-semibold text-white/90">
+                                {author?.displayName ?? `User ${trip.userId.slice(0, 6)}`}
+                              </div>
+                              <div className="text-[10px] text-white/50 group-hover:text-white/70">
+                                View profile
+                              </div>
+                            </div>
                           </button>
                         </div>
+                        {!trip.imageUrl && (
+                          <header className="flex items-center justify-between gap-2 mb-1">
+                            <div className="flex flex-col">
+                              <h3 className="text-sm font-semibold text-white line-clamp-2 break-words">
+                                {trip.title}
+                              </h3>
+                              <span className="text-[11px] text-slate-400">
+                                {trip.cityName}, {trip.countryCode}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-500 whitespace-nowrap">
+                              {formatDate(trip.createdAt)}
+                            </span>
+                          </header>
+                        )}
+
+                        <p className="text-[12px] text-slate-200 leading-relaxed line-clamp-5 break-words">
+                          {trip.body}
+                        </p>
+
+                        {/* Actions */}
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleLike(trip.id)}
+                            disabled={!user}
+                            className={[
+                              "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold border transition",
+                              likedByMe[trip.id]
+                                ? "bg-pink-500/20 border-pink-400/30 text-pink-200"
+                                : "bg-white/5 border-white/10 text-white/75 hover:text-white hover:bg-white/10",
+                              !user ? "opacity-60 cursor-not-allowed" : "",
+                            ].join(" ")}
+                            aria-label="Like"
+                            title={user ? "Like" : "Log in to like"}
+                          >
+                            <Heart size={14} className={likedByMe[trip.id] ? "fill-current" : ""} />
+                            <span>{likeCounts[trip.id] ?? 0}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !(commentsOpen[trip.id] ?? false);
+                              setCommentsOpen((m) => ({ ...m, [trip.id]: next }));
+                              if (next && !commentsByTrip[trip.id]) loadComments(trip.id);
+                            }}
+                            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold border transition bg-white/5 border-white/10 text-white/75 hover:text-white hover:bg-white/10"
+                            aria-label="Comments"
+                            title="Comments"
+                          >
+                            <MessageCircle size={14} />
+                            <span>{commentCounts[trip.id] ?? 0}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => sharePost(trip.id, trip.userId)}
+                            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold border transition bg-white/5 border-white/10 text-white/75 hover:text-white hover:bg-white/10"
+                            aria-label="Share"
+                            title="Share"
+                          >
+                            <Share2 size={14} />
+                            <span>{shareCounts[trip.id] ?? 0}</span>
+                          </button>
+
+                          {shareToast[trip.id] && (
+                            <span className="text-[11px] text-sky-200/90">Copied!</span>
+                          )}
+                        </div>
+                        {commentsOpen[trip.id] && (
+                        <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3">
+                          {commentsLoading[trip.id] && (
+                            <div className="text-[11px] text-slate-300">Loading comments…</div>
+                          )}
+
+                          {!commentsLoading[trip.id] && (commentsByTrip[trip.id]?.length ?? 0) === 0 && (
+                            <div className="text-[11px] text-slate-300">No comments yet.</div>
+                          )}
+
+                          {!commentsLoading[trip.id] && (commentsByTrip[trip.id]?.length ?? 0) > 0 && (
+                            <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                              {commentsByTrip[trip.id].map((c) => (
+                                <div key={c.id} className="text-[11px] text-slate-100">
+                                  <span className="text-slate-300 mr-2">{c.userId?.slice(0, 6)}:</span>
+                                  <span className="break-words">{c.body}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="mt-3 flex items-center gap-2">
+                            <input
+                              value={commentDraft[trip.id] ?? ""}
+                              onChange={(e) => setCommentDraft((m) => ({ ...m, [trip.id]: e.target.value }))}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") addComment(trip.id);
+                              }}
+                              placeholder={user ? "Write a comment…" : "Log in to comment"}
+                              disabled={!user}
+                              className="flex-1 bg-black/20 border border-white/10 rounded-full px-3 py-2 text-[12px] text-white placeholder-white/35 focus:outline-none focus:ring-2 focus:ring-sky-500/40 disabled:opacity-60"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => addComment(trip.id)}
+                              disabled={!user || !(commentDraft[trip.id] ?? "").trim()}
+                              className="px-3 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-[12px] font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              Post
+                            </button>
+                          </div>
+                        </div>
+                        )}
                       </div>
-                      )}
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                )})}
             </div>
               ):(
               <div className="flex-1 flex flex-col overflow-hidden">
