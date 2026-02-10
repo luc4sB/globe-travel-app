@@ -534,8 +534,8 @@ return (
           exit={{ x: "-100%" }}
           transition={{ type: "spring", stiffness: 90, damping: 14 }}
           className={[
-            "fixed left-0 z-50 w-full top-[40px]",
-            "top-[40px] h-[calc(100dvh-40px-var(--bottom-nav-h))] lg:top-0 lg:h-[calc(100vh-var(--bottom-nav-h))]",
+            "fixed left-0 top-0 bottom-[var(--bottom-nav-h)] z-50 w-full",
+            "lg:top-[var(--nav-h)]",
             expanded ? "lg:w-screen" : "sm:w-[440px]",
             "backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40",
             "dark:from-zinc-900/70 dark:to-black/60",
