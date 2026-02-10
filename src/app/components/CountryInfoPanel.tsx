@@ -272,9 +272,9 @@ const dateError =
             exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 90, damping: 14 }}
             className={[
-              "fixed right-0 top-0 z-50 h-full w-full",
+              "fixed right-0 z-50 w-full top-[40px]",
               expanded ? "lg:w-[min(960px,100vw)]" : "sm:w-[440px]",
-              "lg:top-[70px] lg:h-[calc(100vh-70px)]",
+              "h-[calc(100dvh-var(--bottom-nav-h)-40px)] lg:top-0 lg:h-[calc(100vh-var(--bottom-nav-h))]",
               "backdrop-blur-3xl bg-gradient-to-b from-white/10 to-black/40 dark:from-zinc-900/70 dark:to-black/60",
               "border-l border-white/10 shadow-[0_0_40px_rgba(0,0,0,0.4)] overflow-y-auto",
             ].join(" ")}
@@ -440,7 +440,7 @@ const dateError =
                     </div>
 
                     {/* Dates */}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md mx-[20px]">
                       <div>
                         <label className="text-xs text-gray-300 mb-1 block">Departure Date</label>
                         <input
@@ -541,8 +541,8 @@ const dateError =
                     </div>
 
                     {/* Dates + guests */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md mx-[20px]">
+                        <div>
                         <label className="text-xs text-gray-300 mb-1 block">Check-in</label>
                         <input
                           type="date"

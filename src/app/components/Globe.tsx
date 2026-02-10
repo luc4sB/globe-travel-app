@@ -586,33 +586,39 @@ export default function Globe() {
         />
       )}
 
-      <div className="fixed bottom-4 inset-x-0 flex justify-center z-50">
-        <div className="inline-flex rounded-full bg-slate-900/85 border border-white/15 shadow-lg shadow-black/60 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setMobilePanel("info")}
-            className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
-              mobilePanel === "info"
-                ? "bg-sky-500 text-white"
-                : "text-slate-200 hover:bg-white/5"
-            }`}
-          >
-            Info
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobilePanel("social")}
-            className={`px-4 py-1.5 text-[11px] font-medium transition-colors ${
-              mobilePanel === "social"
-                ? "bg-pink-500 text-white"
-                : "text-slate-200 hover:bg-white/5"
-            }`}
-          >
-            Social
-          </button>
+      <div
+        className="fixed left-0 right-0 z-[80] lg:hidden"
+        style={{ top: 0 }}
+      >
+          <div className="h-10 grid grid-cols-2 backdrop-blur-xl">
+            <button
+              type="button"
+              onClick={() => setMobilePanel("social")}
+              className={[
+                "text-[12px] font-semibold transition-colors",
+                mobilePanel === "social"
+                  ? "bg-emerald-500 text-white"
+                  : "text-white/70 hover:bg-white/5",
+              ].join(" ")}
+            >
+              Social
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMobilePanel("info")}
+              className={[
+                "text-[12px] font-semibold transition-colors",
+                mobilePanel === "info"
+                  ? "bg-sky-500 text-white"
+                  : "text-white/70 hover:bg-white/5",
+              ].join(" ")}
+            >
+              Info
+            </button>
+          </div>
         </div>
       </div>
-    </div>
   </>
 )}
 
